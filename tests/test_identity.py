@@ -1,5 +1,15 @@
 import pytest
 
+from rag_backend.core.security import hash_password, verify_password
+
+
+def test_password_hash_uses_bcrypt() -> None:
+    password_hash = hash_password("password123")
+
+    assert password_hash.startswith("$2")
+    assert verify_password("password123", password_hash)
+    assert not verify_password("wrong-password", password_hash)
+
 
 @pytest.mark.asyncio
 async def test_register_login_and_me(client) -> None:

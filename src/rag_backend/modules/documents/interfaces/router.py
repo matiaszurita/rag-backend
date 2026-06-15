@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from rag_backend.core.config import get_settings
 from rag_backend.core.database import get_db_session
 from rag_backend.modules.documents.application.dtos import UploadDocumentCommand
-from rag_backend.modules.documents.application.services import DocumentService
+from rag_backend.modules.documents.application.services import DocumentService, DocumentUploadPolicy
 from rag_backend.modules.documents.infrastructure.repositories import SqlAlchemyDocumentRepository
 from rag_backend.modules.documents.infrastructure.storage import LocalDocumentStorage
 from rag_backend.modules.documents.interfaces.schemas import DocumentResponse
@@ -24,6 +24,10 @@ def build_document_service(session: AsyncSession) -> DocumentService:
         documents=SqlAlchemyDocumentRepository(session),
         workspaces=SqlAlchemyWorkspaceRepository(session),
         storage=LocalDocumentStorage(settings.local_storage_path),
+        upload_policy=DocumentUploadPolicy(
+            allowed_extensions=frozenset({".md", ".txt", ".pdf"}),
+            max_size_bytes=settings.max_upload_size_bytes,
+        ),
     )
 
 

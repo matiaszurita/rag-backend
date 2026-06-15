@@ -79,6 +79,27 @@ alembic upgrade head
 uvicorn rag_backend.main:app --reload
 ```
 
+## Local vs Docker Database Host
+
+The database host depends on where the API or Alembic process is running.
+
+- If you run the API or `alembic` from your local machine, use `localhost` as the database host.
+- If you run the API or `alembic` inside Docker Compose, use `postgres` as the database host.
+
+Local example:
+
+```bash
+postgresql+asyncpg://postgres:postgres@localhost:5432/rag_backend
+```
+
+Docker example:
+
+```bash
+postgresql+asyncpg://postgres:postgres@postgres:5432/rag_backend
+```
+
+Do not commit a real `.env` file with local or shared secrets.
+
 ## Quality Commands
 
 Run tests:

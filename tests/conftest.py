@@ -22,6 +22,7 @@ def test_environment(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_file}")
     monkeypatch.setenv("ALEMBIC_DATABASE_URL", f"sqlite+aiosqlite:///{db_file}")
     monkeypatch.setenv("LOCAL_STORAGE_PATH", str(root / "documents"))
+    monkeypatch.setenv("MAX_UPLOAD_SIZE_MB", "10")
     monkeypatch.setenv("JWT_SECRET_KEY", "test-secret-key-with-sufficient-length")
     monkeypatch.setenv("ENVIRONMENT", "test")
     get_settings.cache_clear()

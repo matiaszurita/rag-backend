@@ -1,6 +1,8 @@
+from dataclasses import dataclass
+from pathlib import Path
 from uuid import UUID, uuid4
 
-from rag_backend.core.errors import NotFoundError
+from rag_backend.core.errors import BadRequestError, NotFoundError
 from rag_backend.modules.documents.application.dtos import DocumentDTO, UploadDocumentCommand
 from rag_backend.modules.documents.application.ports import (
     DocumentRepositoryPort,
@@ -24,16 +26,49 @@ def _to_dto(document: Document) -> DocumentDTO:
     )
 
 
+@dataclass(slots=True)
+class DocumentUploadPolicy:
+    allowed_extensions: frozenset[str]
+    max_size_bytes: int
+
+    def validate(self, *, original_filename: str, content: bytes) -> None:
+        extension = Path(original_filename).suffix.lower()
+        if extension not in self.allowed_extensions:
+            allowed_extensions = ", ".join(sorted(self.allowed_extensions))
+            raise BadRequestError(
+                "Unsupported document file type",
+                code="unsupported_document_type",
+                details={
+                    "filename": original_filename,
+                    "allowed_extensions": allowed_extensions,
+                },
+            )
+
+        size_bytes = len(content)
+        if size_bytes > self.max_size_bytes:
+            raise BadRequestError(
+                "Document exceeds maximum upload size",
+                code="document_too_large",
+                details={
+                    "filename": original_filename,
+                    "max_size_bytes": self.max_size_bytes,
+                    "size_bytes": size_bytes,
+                },
+            )
+
+
 class DocumentService:
     def __init__(
         self,
         documents: DocumentRepositoryPort,
         workspaces: WorkspaceAccessPort,
         storage: DocumentStoragePort,
+        upload_policy: DocumentUploadPolicy,
     ) -> None:
         self.documents = documents
         self.workspaces = workspaces
         self.storage = storage
+        self.upload_policy = upload_policy
 
     async def upload(self, command: UploadDocumentCommand) -> DocumentDTO:
         workspace = await self.workspaces.get_by_id_for_owner(
@@ -42,6 +77,11 @@ class DocumentService:
         )
         if workspace is None:
             raise NotFoundError("Workspace not found", code="workspace_not_found")
+
+        self.upload_policy.validate(
+            original_filename=command.original_filename,
+            content=command.content,
+        )
 
         document_id = uuid4()
         storage_path = await self.storage.save(

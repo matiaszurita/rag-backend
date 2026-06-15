@@ -35,6 +35,17 @@ class ConflictError(AppError):
         super().__init__(message, code=code, status_code=409, details=details)
 
 
+class BadRequestError(AppError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "bad_request",
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message, code=code, status_code=400, details=details)
+
+
 class NotFoundError(AppError):
     def __init__(
         self,

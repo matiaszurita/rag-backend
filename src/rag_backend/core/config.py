@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -26,11 +26,24 @@ class Settings(BaseSettings):
     )
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     local_storage_path: Path = Field(default=Path("./data/documents"), alias="LOCAL_STORAGE_PATH")
+    max_upload_size_mb: int = Field(default=10, alias="MAX_UPLOAD_SIZE_MB")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+
+    @model_validator(mode="after")
+    def validate_security_settings(self) -> "Settings":
+        if self.environment != "development" and self.jwt_secret_key == "change-me":
+            raise ValueError(
+                "JWT_SECRET_KEY cannot be 'change-me' outside development. Set a secure secret."
+            )
+        return self
 
     @property
     def effective_alembic_database_url(self) -> str:
         return self.alembic_database_url or self.database_url
+
+    @property
+    def max_upload_size_bytes(self) -> int:
+        return self.max_upload_size_mb * 1024 * 1024
 
 
 @lru_cache
