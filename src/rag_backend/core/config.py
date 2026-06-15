@@ -5,6 +5,13 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _default_cors_allowed_origins() -> list[str]:
+    return [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -26,6 +33,10 @@ class Settings(BaseSettings):
     )
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     local_storage_path: Path = Field(default=Path("./data/documents"), alias="LOCAL_STORAGE_PATH")
+    cors_allowed_origins: list[str] = Field(
+        default_factory=_default_cors_allowed_origins,
+        alias="CORS_ALLOWED_ORIGINS",
+    )
     max_upload_size_mb: int = Field(default=10, alias="MAX_UPLOAD_SIZE_MB")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 

@@ -79,6 +79,8 @@ alembic upgrade head
 uvicorn rag_backend.main:app --reload
 ```
 
+For local frontend work, the Vite app normally runs at `http://localhost:5173`. The backend must allow that origin through `CORS_ALLOWED_ORIGINS`. If the frontend port changes, update `CORS_ALLOWED_ORIGINS` to match the new origin.
+
 ## Local vs Docker Database Host
 
 The database host depends on where the API or Alembic process is running.
