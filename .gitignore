@@ -125,6 +125,8 @@ celerybeat.pid
 
 # Environments
 .env
+.env.docker
+.env.local
 .venv
 env/
 venv/
@@ -189,3 +191,14 @@ pip-selfcheck.json
 
 .opencode
 openspec 
+
+.venv/
+
+
+
+*.pyc
+*.pyo
+*.pyd
+
+data/
+
