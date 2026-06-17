@@ -38,6 +38,7 @@ class TimestampMixin:
 def import_model_modules() -> None:
     import rag_backend.modules.documents.infrastructure.models  # noqa: F401
     import rag_backend.modules.identity.infrastructure.models  # noqa: F401
+    import rag_backend.modules.rag.infrastructure.models  # noqa: F401
     import rag_backend.modules.workspaces.infrastructure.models  # noqa: F401
 
 

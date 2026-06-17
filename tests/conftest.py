@@ -12,6 +12,13 @@ from rag_backend.core.database import (
     import_model_modules,
     reset_database_state,
 )
+from rag_backend.modules.rag.infrastructure.fakes import FakeEmbeddingProvider
+from rag_backend.modules.rag.interfaces.router import get_embedding_provider, get_text_splitter
+
+
+class TestTextSplitter:
+    def split(self, text: str) -> list[str]:
+        return [chunk.strip() for chunk in text.split("\n\n") if chunk.strip()]
 
 
 @pytest.fixture(autouse=True)
@@ -37,6 +44,8 @@ async def app() -> AsyncGenerator:
         await connection.run_sync(Base.metadata.create_all)
 
     application = create_app()
+    application.dependency_overrides[get_embedding_provider] = lambda: FakeEmbeddingProvider()
+    application.dependency_overrides[get_text_splitter] = lambda: TestTextSplitter()
     yield application
 
     session_maker = get_session_maker()

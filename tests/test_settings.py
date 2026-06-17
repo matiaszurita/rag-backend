@@ -25,3 +25,17 @@ def test_settings_allow_change_me_in_development(monkeypatch: pytest.MonkeyPatch
     settings = Settings()
 
     assert settings.jwt_secret_key == "change-me"
+
+
+def test_settings_parse_cors_allowed_origins_json(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "CORS_ALLOWED_ORIGINS",
+        '["http://localhost:5173", "http://127.0.0.1:5173"]',
+    )
+
+    settings = Settings()
+
+    assert settings.cors_allowed_origins == [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]

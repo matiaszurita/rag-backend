@@ -5,6 +5,13 @@ from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _default_cors_allowed_origins() -> list[str]:
+    return [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -26,7 +33,19 @@ class Settings(BaseSettings):
     )
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
     local_storage_path: Path = Field(default=Path("./data/documents"), alias="LOCAL_STORAGE_PATH")
+    cors_allowed_origins: list[str] = Field(
+        default_factory=_default_cors_allowed_origins,
+        alias="CORS_ALLOWED_ORIGINS",
+    )
     max_upload_size_mb: int = Field(default=10, alias="MAX_UPLOAD_SIZE_MB")
+    gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
+    gemini_embedding_model: str = Field(
+        default="models/text-embedding-004",
+        alias="GEMINI_EMBEDDING_MODEL",
+    )
+    rag_chunk_size: int = Field(default=1000, alias="RAG_CHUNK_SIZE")
+    rag_chunk_overlap: int = Field(default=200, alias="RAG_CHUNK_OVERLAP")
+    rag_search_top_k: int = Field(default=5, alias="RAG_SEARCH_TOP_K")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     @model_validator(mode="after")
