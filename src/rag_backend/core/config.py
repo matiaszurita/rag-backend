@@ -43,9 +43,12 @@ class Settings(BaseSettings):
         default="models/text-embedding-004",
         alias="GEMINI_EMBEDDING_MODEL",
     )
+    gemini_llm_model: str = Field(default="models/gemini-2.5-flash", alias="GEMINI_LLM_MODEL")
     rag_chunk_size: int = Field(default=1000, alias="RAG_CHUNK_SIZE")
     rag_chunk_overlap: int = Field(default=200, alias="RAG_CHUNK_OVERLAP")
     rag_search_top_k: int = Field(default=5, alias="RAG_SEARCH_TOP_K")
+    rag_answer_max_context_chunks: int = Field(default=5, alias="RAG_ANSWER_MAX_CONTEXT_CHUNKS")
+    rag_min_relevance_score: float = Field(default=0.30, alias="RAG_MIN_RELEVANCE_SCORE")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     @model_validator(mode="after")

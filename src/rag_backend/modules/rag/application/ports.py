@@ -25,6 +25,10 @@ class EmbeddingProviderPort(Protocol):
     async def embed_query(self, text: str) -> list[float]: ...
 
 
+class LLMProviderPort(Protocol):
+    async def generate_answer(self, *, system_prompt: str, user_prompt: str) -> str: ...
+
+
 class ChunkRepositoryPort(Protocol):
     async def replace_for_document(
         self,

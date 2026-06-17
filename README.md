@@ -1,6 +1,6 @@
 # rag-backend
 
-Backend base for the Technical Knowledge Workspace portfolio project. The backend is a modular monolith for ContextVault with identity, workspaces, document management, and Phase 1 RAG vector search.
+Backend base for the Technical Knowledge Workspace portfolio project. The backend is a modular monolith for ContextVault with identity, workspaces, document management, vector search, and source-backed RAG query answering.
 
 ## Stack
 
@@ -12,7 +12,7 @@ Backend base for the Technical Knowledge Workspace portfolio project. The backen
 - PostgreSQL + pgvector
 - Redis
 - LangChain text splitting
-- Gemini embeddings
+- Gemini embeddings and LLM answer generation
 - pypdf
 - Pytest
 - Ruff
@@ -54,25 +54,27 @@ Cross-cutting concerns such as settings, database setup, logging, auth primitive
 - Workspace module with create, list, and get-by-id
 - Documents module with local file storage, metadata persistence, listing, retrieval, and logical deletion
 - RAG Phase 1 with explicit document indexing and workspace-scoped semantic search
+- RAG Phase 2 with source-backed question answering over retrieved chunks
 
-## RAG Phase 1
+## RAG
 
-ContextVault uses a progressive RAG architecture. This backend currently implements only Phase 1:
+ContextVault uses a progressive RAG architecture. This backend currently implements Phases 1 and 2:
 
 - Extract text from uploaded `.txt`, `.md`, and `.pdf` documents
 - Split document text into chunks
 - Generate Gemini embeddings through `langchain-google-genai`
 - Persist chunks and embeddings in PostgreSQL with pgvector
 - Search semantically similar chunks inside an authenticated user's workspace
+- Ask a question against retrieved chunks and generate a Gemini Flash answer with sources
 
-The current RAG search endpoint returns retrieved chunks only. It does not generate an LLM answer yet.
+The `/rag/search` endpoint returns retrieved chunks only and is kept as a debug retrieval endpoint. The `/rag/query` endpoint retrieves relevant chunks, builds controlled context, calls the configured LLM, and returns an answer with sources.
 
 Planned later phases are intentionally out of scope here:
 
-- LLM answer generation with sources
 - Hybrid semantic plus lexical search
 - Reranking
 - Parent-child chunks
+- Conversation history and streaming
 - Redis/background indexing workers
 
 ## Local Development
@@ -150,9 +152,12 @@ Important settings are documented in `.env.example`:
 - `LOCAL_STORAGE_PATH`
 - `GEMINI_API_KEY`
 - `GEMINI_EMBEDDING_MODEL`
+- `GEMINI_LLM_MODEL`
 - `RAG_CHUNK_SIZE`
 - `RAG_CHUNK_OVERLAP`
 - `RAG_SEARCH_TOP_K`
+- `RAG_ANSWER_MAX_CONTEXT_CHUNKS`
+- `RAG_MIN_RELEVANCE_SCORE`
 
 ## API Overview
 
@@ -169,6 +174,7 @@ Important settings are documented in `.env.example`:
 - `DELETE /api/v1/workspaces/{workspace_id}/documents/{document_id}`
 - `POST /api/v1/workspaces/{workspace_id}/documents/{document_id}/index`
 - `POST /api/v1/workspaces/{workspace_id}/rag/search`
+- `POST /api/v1/workspaces/{workspace_id}/rag/query`
 
 Semantic search request:
 
@@ -196,6 +202,39 @@ Semantic search response:
 }
 ```
 
+RAG query request:
+
+```json
+{
+  "question": "What does the deployment checklist require?",
+  "top_k": 5
+}
+```
+
+RAG query response:
+
+```json
+{
+  "question": "What does the deployment checklist require?",
+  "answer": "The deployment checklist requires ...",
+  "sources": [
+    {
+      "chunk_id": "...",
+      "document_id": "...",
+      "filename": "deployment.md",
+      "score": 0.82,
+      "content_preview": "..."
+    }
+  ],
+  "metadata": {
+    "context_chunks_used": 1,
+    "top_k": 5,
+    "llm_model": "models/gemini-2.5-flash",
+    "context_char_count": 912
+  }
+}
+```
+
 ## Design Notes
 
 - Use cases do not depend directly on FastAPI or SQLAlchemy.
@@ -203,5 +242,5 @@ Semantic search response:
 - IDs use UUIDs and persisted records include timestamps.
 - Redis is included for future async workers but is not used yet.
 - LangChain and Gemini are isolated behind RAG infrastructure adapters.
-- Tests use deterministic fake embeddings and do not call Gemini.
-- No chat endpoint, generated answer, hybrid search, reranking, or parent-child chunking is included yet.
+- Tests use deterministic fake embeddings and fake LLM providers and do not call Gemini.
+- No frontend, conversation history, streaming, hybrid search, reranking, or parent-child chunking is included yet.

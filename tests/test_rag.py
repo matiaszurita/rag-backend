@@ -1,4 +1,5 @@
 import io
+from inspect import getsource
 from uuid import UUID
 
 import pytest
@@ -6,9 +7,14 @@ import sqlalchemy as sa
 
 from rag_backend.core.database import get_session_maker
 from rag_backend.modules.documents.infrastructure.models import DocumentORM
-from rag_backend.modules.rag.infrastructure.fakes import FakeEmbeddingProvider
+from rag_backend.modules.rag.application.services import QueryRagService
+from rag_backend.modules.rag.infrastructure.fakes import FakeEmbeddingProvider, FakeLLMProvider
 from rag_backend.modules.rag.infrastructure.models import DocumentChunkORM
-from rag_backend.modules.rag.interfaces.router import get_embedding_provider
+from rag_backend.modules.rag.interfaces.router import get_embedding_provider, get_llm_provider
+
+INSUFFICIENT_CONTEXT_ANSWER = (
+    "No encontré información suficiente en los documentos indexados para responder esta pregunta."
+)
 
 
 async def _create_user_workspace(client, email: str):
@@ -142,6 +148,181 @@ async def test_semantic_search_returns_results_from_owned_workspace_only(client)
     results = response.json()["results"]
     assert results
     assert {item["document_id"] for item in results} == {document_one["id"]}
+
+
+@pytest.mark.asyncio
+async def test_rag_query_returns_answer_and_sources(app, client) -> None:
+    token, workspace_id = await _create_user_workspace(client, "rag-query@example.com")
+    document = await _upload_document(
+        client,
+        token,
+        workspace_id,
+        "alpha.txt",
+        b"alpha project context\n\nbeta deployment notes",
+    )
+    await client.post(
+        f"/api/v1/workspaces/{workspace_id}/documents/{document['id']}/index",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/rag/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "What does alpha say?", "top_k": 5},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["question"] == "What does alpha say?"
+    assert payload["answer"] == "fake grounded answer"
+    assert payload["metadata"]["context_chunks_used"] >= 1
+    assert payload["metadata"]["top_k"] == 5
+    assert payload["metadata"]["llm_model"] == "models/gemini-2.5-flash"
+    assert app.state.fake_llm_provider.calls
+    source = payload["sources"][0]
+    assert source["chunk_id"]
+    assert source["document_id"] == document["id"]
+    assert source["filename"] == "alpha.txt"
+    assert isinstance(source["score"], float)
+    assert source["content_preview"]
+
+
+@pytest.mark.asyncio
+async def test_rag_query_returns_insufficient_context_without_llm_call(app, client) -> None:
+    token, workspace_id = await _create_user_workspace(client, "rag-query-empty@example.com")
+
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/rag/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "What is indexed?", "top_k": 5},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["answer"] == INSUFFICIENT_CONTEXT_ANSWER
+    assert payload["sources"] == []
+    assert payload["metadata"]["context_chunks_used"] == 0
+    assert app.state.fake_llm_provider.calls == []
+
+
+@pytest.mark.asyncio
+async def test_rag_query_rejects_other_users_workspace_without_llm_call(app, client) -> None:
+    token_one, _ = await _create_user_workspace(client, "rag-query-owner-one@example.com")
+    _, workspace_two = await _create_user_workspace(client, "rag-query-owner-two@example.com")
+
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace_two}/rag/query",
+        headers={"Authorization": f"Bearer {token_one}"},
+        json={"question": "What is private?", "top_k": 5},
+    )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "workspace_not_found"
+    assert app.state.fake_llm_provider.calls == []
+
+
+@pytest.mark.asyncio
+async def test_rag_query_uses_fake_llm_provider(app, client) -> None:
+    fake_llm = FakeLLMProvider(answer="custom fake answer")
+    app.dependency_overrides[get_llm_provider] = lambda: fake_llm
+    token, workspace_id = await _create_user_workspace(client, "rag-query-fake@example.com")
+    document = await _upload_document(
+        client,
+        token,
+        workspace_id,
+        "fake.txt",
+        b"fake provider context",
+    )
+    await client.post(
+        f"/api/v1/workspaces/{workspace_id}/documents/{document['id']}/index",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/rag/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "fake provider", "top_k": 1},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["answer"] == "custom fake answer"
+    assert len(fake_llm.calls) == 1
+    app.dependency_overrides[get_llm_provider] = lambda: app.state.fake_llm_provider
+
+
+@pytest.mark.asyncio
+async def test_search_still_returns_chunks_only_after_query_endpoint(client) -> None:
+    token, workspace_id = await _create_user_workspace(client, "rag-search-regression@example.com")
+    document = await _upload_document(
+        client,
+        token,
+        workspace_id,
+        "search.txt",
+        b"search debug chunk",
+    )
+    await client.post(
+        f"/api/v1/workspaces/{workspace_id}/documents/{document['id']}/index",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/rag/search",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"query": "search", "top_k": 5},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert set(payload) == {"query", "results"}
+    assert "answer" not in payload
+
+
+def test_query_rag_service_does_not_depend_on_gemini_directly() -> None:
+    source = getsource(QueryRagService)
+    assert "Gemini" not in source
+    assert "langchain" not in source.lower()
+
+
+@pytest.mark.asyncio
+async def test_rag_query_llm_failure_returns_controlled_error(app, client) -> None:
+    fake_llm = FakeLLMProvider(fail=True)
+    app.dependency_overrides[get_llm_provider] = lambda: fake_llm
+    token, workspace_id = await _create_user_workspace(client, "rag-query-llm-fail@example.com")
+    document = await _upload_document(client, token, workspace_id, "fail.txt", b"failure context")
+    await client.post(
+        f"/api/v1/workspaces/{workspace_id}/documents/{document['id']}/index",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/rag/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "failure context", "top_k": 1},
+    )
+
+    assert response.status_code == 400
+    payload = response.json()
+    assert payload["error"]["code"] == "rag_answer_failed"
+    assert "secret-token" not in str(payload)
+    assert "Contexto recuperado" not in str(payload)
+    app.dependency_overrides[get_llm_provider] = lambda: app.state.fake_llm_provider
+
+
+@pytest.mark.asyncio
+async def test_rag_query_empty_question_returns_bad_request(client) -> None:
+    token, workspace_id = await _create_user_workspace(
+        client,
+        "rag-query-empty-question@example.com",
+    )
+
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/rag/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "   ", "top_k": 5},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "empty_question"
 
 
 @pytest.mark.asyncio

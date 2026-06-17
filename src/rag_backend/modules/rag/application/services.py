@@ -5,6 +5,10 @@ from rag_backend.modules.documents.domain.entities import DocumentStatus
 from rag_backend.modules.rag.application.dtos import (
     IndexDocumentCommand,
     IndexDocumentResult,
+    QueryRagCommand,
+    QueryRagMetadataDTO,
+    QueryRagResult,
+    RagSourceDTO,
     SearchSimilarChunksCommand,
     SearchSimilarChunksResult,
     SimilarChunkDTO,
@@ -13,10 +17,22 @@ from rag_backend.modules.rag.application.ports import (
     ChunkRepositoryPort,
     DocumentAccessPort,
     EmbeddingProviderPort,
+    LLMProviderPort,
     TextExtractorPort,
     TextSplitterPort,
 )
 from rag_backend.modules.rag.domain.entities import DocumentChunk
+
+INSUFFICIENT_CONTEXT_ANSWER = (
+    "No encontré información suficiente en los documentos indexados para responder esta pregunta."
+)
+
+RAG_SYSTEM_PROMPT = """Eres un asistente de recuperación de conocimiento técnico.
+Responde únicamente usando el contexto proporcionado.
+Si el contexto no contiene información suficiente para responder, dilo claramente.
+No inventes información.
+Responde de forma clara, breve y técnica.
+Cuando sea útil, menciona que la respuesta se basa en los documentos recuperados."""
 
 
 class IndexDocumentService:
@@ -151,3 +167,141 @@ class SearchSimilarChunksService:
                 for result in results
             ],
         )
+
+
+class QueryRagService:
+    def __init__(
+        self,
+        *,
+        documents: DocumentAccessPort,
+        embeddings: EmbeddingProviderPort,
+        chunks: ChunkRepositoryPort,
+        llm: LLMProviderPort,
+        max_context_chunks: int,
+        min_relevance_score: float,
+        llm_model: str,
+    ) -> None:
+        self.documents = documents
+        self.embeddings = embeddings
+        self.chunks = chunks
+        self.llm = llm
+        self.max_context_chunks = max_context_chunks
+        self.min_relevance_score = min_relevance_score
+        self.llm_model = llm_model
+
+    async def query(self, command: QueryRagCommand) -> QueryRagResult:
+        question = command.question.strip()
+        if not question:
+            raise BadRequestError("Question cannot be empty", code="empty_question")
+
+        if self.max_context_chunks < 1:
+            raise BadRequestError(
+                "RAG answer context chunk limit must be at least 1",
+                code="invalid_rag_answer_context_limit",
+            )
+
+        if command.top_k is not None and command.top_k < 1:
+            raise BadRequestError("top_k must be at least 1", code="invalid_top_k")
+
+        workspace_exists = await self.documents.workspace_exists_for_owner(
+            owner_id=command.owner_id,
+            workspace_id=command.workspace_id,
+        )
+        if not workspace_exists:
+            raise NotFoundError("Workspace not found", code="workspace_not_found")
+
+        top_k = min(command.top_k or self.max_context_chunks, self.max_context_chunks)
+        query_embedding = await self.embeddings.embed_query(question)
+        results = await self.chunks.similarity_search(
+            workspace_id=command.workspace_id,
+            query_embedding=query_embedding,
+            limit=top_k,
+        )
+        relevant_chunks = [
+            result for result in results if result.score >= self.min_relevance_score
+        ][:top_k]
+
+        if not relevant_chunks:
+            return QueryRagResult(
+                question=question,
+                answer=INSUFFICIENT_CONTEXT_ANSWER,
+                sources=[],
+                metadata=QueryRagMetadataDTO(
+                    context_chunks_used=0,
+                    top_k=top_k,
+                    llm_model=self.llm_model,
+                    context_char_count=0,
+                ),
+            )
+
+        user_prompt = self._build_user_prompt(question, relevant_chunks)
+        try:
+            answer = await self.llm.generate_answer(
+                system_prompt=RAG_SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+            )
+        except AppError:
+            raise
+        except Exception as error:
+            raise BadRequestError(
+                "RAG answer generation failed",
+                code="rag_answer_failed",
+            ) from error
+
+        return QueryRagResult(
+            question=question,
+            answer=answer,
+            sources=[self._source_from_chunk(result) for result in relevant_chunks],
+            metadata=QueryRagMetadataDTO(
+                context_chunks_used=len(relevant_chunks),
+                top_k=top_k,
+                llm_model=self.llm_model,
+                context_char_count=sum(len(result.content) for result in relevant_chunks),
+            ),
+        )
+
+    def _build_user_prompt(self, question: str, chunks: list) -> str:
+        context_blocks = []
+        for index, chunk in enumerate(chunks, start=1):
+            filename = self._filename(chunk.metadata)
+            context_blocks.append(
+                "\n".join(
+                    [
+                        f"[Fuente {index}]",
+                        f"chunk_id: {chunk.chunk_id}",
+                        f"document_id: {chunk.document_id}",
+                        f"filename: {filename}",
+                        f"score: {chunk.score:.4f}",
+                        "content:",
+                        chunk.content,
+                    ]
+                )
+            )
+        return "\n\n".join(
+            [
+                "Contexto recuperado:",
+                "\n\n".join(context_blocks),
+                "Pregunta:",
+                question,
+                "Respuesta:",
+            ]
+        )
+
+    def _source_from_chunk(self, chunk) -> RagSourceDTO:
+        return RagSourceDTO(
+            chunk_id=chunk.chunk_id,
+            document_id=chunk.document_id,
+            filename=self._filename(chunk.metadata),
+            score=chunk.score,
+            content_preview=self._preview(chunk.content),
+        )
+
+    def _filename(self, metadata: dict[str, object]) -> str:
+        source = metadata.get("source")
+        if isinstance(source, str) and source.strip():
+            return source
+        return "unknown"
+
+    def _preview(self, content: str) -> str:
+        normalized = " ".join(content.split())
+        return normalized[:240]

@@ -12,8 +12,12 @@ from rag_backend.core.database import (
     import_model_modules,
     reset_database_state,
 )
-from rag_backend.modules.rag.infrastructure.fakes import FakeEmbeddingProvider
-from rag_backend.modules.rag.interfaces.router import get_embedding_provider, get_text_splitter
+from rag_backend.modules.rag.infrastructure.fakes import FakeEmbeddingProvider, FakeLLMProvider
+from rag_backend.modules.rag.interfaces.router import (
+    get_embedding_provider,
+    get_llm_provider,
+    get_text_splitter,
+)
 
 
 class TestTextSplitter:
@@ -44,7 +48,10 @@ async def app() -> AsyncGenerator:
         await connection.run_sync(Base.metadata.create_all)
 
     application = create_app()
+    fake_llm_provider = FakeLLMProvider()
+    application.state.fake_llm_provider = fake_llm_provider
     application.dependency_overrides[get_embedding_provider] = lambda: FakeEmbeddingProvider()
+    application.dependency_overrides[get_llm_provider] = lambda: fake_llm_provider
     application.dependency_overrides[get_text_splitter] = lambda: TestTextSplitter()
     yield application
 

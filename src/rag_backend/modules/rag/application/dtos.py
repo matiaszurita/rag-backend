@@ -37,3 +37,36 @@ class SimilarChunkDTO:
 class SearchSimilarChunksResult:
     query: str
     results: list[SimilarChunkDTO]
+
+
+@dataclass(slots=True)
+class QueryRagCommand:
+    owner_id: UUID
+    workspace_id: UUID
+    question: str
+    top_k: int | None
+
+
+@dataclass(slots=True)
+class RagSourceDTO:
+    chunk_id: UUID
+    document_id: UUID
+    filename: str
+    score: float
+    content_preview: str
+
+
+@dataclass(slots=True)
+class QueryRagMetadataDTO:
+    context_chunks_used: int
+    top_k: int
+    llm_model: str
+    context_char_count: int
+
+
+@dataclass(slots=True)
+class QueryRagResult:
+    question: str
+    answer: str
+    sources: list[RagSourceDTO]
+    metadata: QueryRagMetadataDTO
