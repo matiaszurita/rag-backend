@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, model_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -49,7 +49,20 @@ class Settings(BaseSettings):
     rag_search_top_k: int = Field(default=5, alias="RAG_SEARCH_TOP_K")
     rag_answer_max_context_chunks: int = Field(default=5, alias="RAG_ANSWER_MAX_CONTEXT_CHUNKS")
     rag_min_relevance_score: float = Field(default=0.30, alias="RAG_MIN_RELEVANCE_SCORE")
+    rag_retrieval_mode: str = Field(default="hybrid", alias="RAG_RETRIEVAL_MODE")
+    rag_vector_weight: float = Field(default=0.65, alias="RAG_VECTOR_WEIGHT")
+    rag_keyword_weight: float = Field(default=0.35, alias="RAG_KEYWORD_WEIGHT")
+    rag_vector_candidates: int = Field(default=20, alias="RAG_VECTOR_CANDIDATES")
+    rag_keyword_candidates: int = Field(default=20, alias="RAG_KEYWORD_CANDIDATES")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+
+    @field_validator("rag_retrieval_mode")
+    @classmethod
+    def validate_rag_retrieval_mode(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"vector", "keyword", "hybrid"}:
+            raise ValueError("RAG_RETRIEVAL_MODE must be vector, keyword, or hybrid")
+        return normalized
 
     @model_validator(mode="after")
     def validate_security_settings(self) -> "Settings":
@@ -57,6 +70,18 @@ class Settings(BaseSettings):
             raise ValueError(
                 "JWT_SECRET_KEY cannot be 'change-me' outside development. Set a secure secret."
             )
+        if not 0 <= self.rag_vector_weight <= 1:
+            raise ValueError("RAG_VECTOR_WEIGHT must be between 0 and 1")
+        if not 0 <= self.rag_keyword_weight <= 1:
+            raise ValueError("RAG_KEYWORD_WEIGHT must be between 0 and 1")
+        if self.rag_retrieval_mode == "hybrid" and (
+            self.rag_vector_weight == 0 and self.rag_keyword_weight == 0
+        ):
+            raise ValueError("At least one RAG retrieval weight must be positive")
+        if self.rag_vector_candidates < 1:
+            raise ValueError("RAG_VECTOR_CANDIDATES must be at least 1")
+        if self.rag_keyword_candidates < 1:
+            raise ValueError("RAG_KEYWORD_CANDIDATES must be at least 1")
         return self
 
     @property

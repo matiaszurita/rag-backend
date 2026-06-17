@@ -1,6 +1,19 @@
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
+
+
+class RetrievalMode(StrEnum):
+    VECTOR = "vector"
+    KEYWORD = "keyword"
+    HYBRID = "hybrid"
+
+
+class RetrievalSource(StrEnum):
+    VECTOR = "vector"
+    KEYWORD = "keyword"
+    HYBRID = "hybrid"
 
 
 @dataclass(slots=True)
@@ -23,3 +36,6 @@ class SimilarChunk:
     content: str
     score: float
     metadata: dict[str, object]
+    vector_score: float | None = None
+    keyword_score: float | None = None
+    retrieval_source: RetrievalSource = RetrievalSource.VECTOR

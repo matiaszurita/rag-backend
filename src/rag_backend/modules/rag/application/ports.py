@@ -36,11 +36,19 @@ class ChunkRepositoryPort(Protocol):
         chunks: list[DocumentChunk],
     ) -> None: ...
 
-    async def similarity_search(
+    async def vector_search(
         self,
         *,
         workspace_id: UUID,
         query_embedding: list[float],
+        limit: int,
+    ) -> list[SimilarChunk]: ...
+
+    async def keyword_search(
+        self,
+        *,
+        workspace_id: UUID,
+        query: str,
         limit: int,
     ) -> list[SimilarChunk]: ...
 

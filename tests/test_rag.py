@@ -148,6 +148,8 @@ async def test_semantic_search_returns_results_from_owned_workspace_only(client)
     results = response.json()["results"]
     assert results
     assert {item["document_id"] for item in results} == {document_one["id"]}
+    assert response.json()["retrieval_mode"] == "hybrid"
+    assert response.json()["metadata"]["final_results"] == len(results)
 
 
 @pytest.mark.asyncio
@@ -178,12 +180,16 @@ async def test_rag_query_returns_answer_and_sources(app, client) -> None:
     assert payload["metadata"]["context_chunks_used"] >= 1
     assert payload["metadata"]["top_k"] == 5
     assert payload["metadata"]["llm_model"] == "models/gemini-2.5-flash"
+    assert payload["metadata"]["retrieval_mode"] == "hybrid"
     assert app.state.fake_llm_provider.calls
     source = payload["sources"][0]
     assert source["chunk_id"]
     assert source["document_id"] == document["id"]
     assert source["filename"] == "alpha.txt"
     assert isinstance(source["score"], float)
+    assert "vector_score" in source
+    assert "keyword_score" in source
+    assert source["retrieval_source"] in {"vector", "keyword", "hybrid"}
     assert source["content_preview"]
 
 
@@ -202,6 +208,7 @@ async def test_rag_query_returns_insufficient_context_without_llm_call(app, clie
     assert payload["answer"] == INSUFFICIENT_CONTEXT_ANSWER
     assert payload["sources"] == []
     assert payload["metadata"]["context_chunks_used"] == 0
+    assert payload["metadata"]["retrieval_mode"] == "hybrid"
     assert app.state.fake_llm_provider.calls == []
 
 
@@ -273,8 +280,72 @@ async def test_search_still_returns_chunks_only_after_query_endpoint(client) -> 
 
     assert response.status_code == 200
     payload = response.json()
-    assert set(payload) == {"query", "results"}
+    assert set(payload) == {"query", "retrieval_mode", "results", "metadata"}
+    assert payload["retrieval_mode"] == "hybrid"
+    assert payload["metadata"]["fusion_algorithm"] == "weighted_rrf"
+    result = payload["results"][0]
+    assert "vector_score" in result
+    assert "keyword_score" in result
+    assert result["retrieval_source"] in {"vector", "keyword", "hybrid"}
     assert "answer" not in payload
+
+
+@pytest.mark.asyncio
+async def test_search_supports_vector_keyword_and_hybrid_modes(client) -> None:
+    token, workspace_id = await _create_user_workspace(client, "rag-modes@example.com")
+    document = await _upload_document(
+        client,
+        token,
+        workspace_id,
+        "modes.txt",
+        b"JWT_SECRET_KEY exact setting\n\nsemantic deployment context",
+    )
+    await client.post(
+        f"/api/v1/workspaces/{workspace_id}/documents/{document['id']}/index",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    for mode in ["vector", "keyword", "hybrid"]:
+        response = await client.post(
+            f"/api/v1/workspaces/{workspace_id}/rag/search",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"query": "JWT_SECRET_KEY", "top_k": 5, "retrieval_mode": mode},
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["retrieval_mode"] == mode
+        assert payload["metadata"]["retrieval_mode"] == mode
+        assert payload["results"]
+
+
+@pytest.mark.asyncio
+async def test_rag_query_accepts_keyword_retrieval_mode(app, client) -> None:
+    token, workspace_id = await _create_user_workspace(client, "rag-query-keyword@example.com")
+    document = await _upload_document(
+        client,
+        token,
+        workspace_id,
+        "keyword.txt",
+        b"JWT_SECRET_KEY configures signing secrets",
+    )
+    await client.post(
+        f"/api/v1/workspaces/{workspace_id}/documents/{document['id']}/index",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/rag/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"question": "JWT_SECRET_KEY", "top_k": 3, "retrieval_mode": "keyword"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["answer"] == "fake grounded answer"
+    assert payload["metadata"]["retrieval_mode"] == "keyword"
+    assert payload["sources"][0]["retrieval_source"] == "keyword"
+    assert app.state.fake_llm_provider.calls
 
 
 def test_query_rag_service_does_not_depend_on_gemini_directly() -> None:

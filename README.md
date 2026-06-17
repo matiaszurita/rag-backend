@@ -9,7 +9,7 @@ Backend base for the Technical Knowledge Workspace portfolio project. The backen
 - Pydantic Settings
 - SQLAlchemy 2 async + asyncpg
 - Alembic
-- PostgreSQL + pgvector
+- PostgreSQL + pgvector + full-text search
 - Redis
 - LangChain text splitting
 - Gemini embeddings and LLM answer generation
@@ -55,23 +55,25 @@ Cross-cutting concerns such as settings, database setup, logging, auth primitive
 - Documents module with local file storage, metadata persistence, listing, retrieval, and logical deletion
 - RAG Phase 1 with explicit document indexing and workspace-scoped semantic search
 - RAG Phase 2 with source-backed question answering over retrieved chunks
+- RAG Phase 4 backend retrieval with configurable vector, keyword, and hybrid search
 
 ## RAG
 
-ContextVault uses a progressive RAG architecture. This backend currently implements Phases 1 and 2:
+ContextVault uses a progressive RAG architecture. This backend currently implements Phases 1, 2, and backend Phase 4 retrieval:
 
 - Extract text from uploaded `.txt`, `.md`, and `.pdf` documents
 - Split document text into chunks
 - Generate Gemini embeddings through `langchain-google-genai`
 - Persist chunks and embeddings in PostgreSQL with pgvector
 - Search semantically similar chunks inside an authenticated user's workspace
+- Search lexical/full-text matches inside chunk content for exact technical terms
+- Combine vector and keyword retrieval with weighted reciprocal rank fusion in hybrid mode
 - Ask a question against retrieved chunks and generate a Gemini Flash answer with sources
 
-The `/rag/search` endpoint returns retrieved chunks only and is kept as a debug retrieval endpoint. The `/rag/query` endpoint retrieves relevant chunks, builds controlled context, calls the configured LLM, and returns an answer with sources.
+The `/rag/search` endpoint returns retrieved chunks only and is kept as a debug retrieval endpoint. It exposes retrieval mode, score breakdowns, and retrieval metadata. The `/rag/query` endpoint retrieves relevant chunks with the same retrieval modes, builds controlled context, calls the configured LLM, and returns an answer with sources.
 
 Planned later phases are intentionally out of scope here:
 
-- Hybrid semantic plus lexical search
 - Reranking
 - Parent-child chunks
 - Conversation history and streaming
@@ -158,6 +160,11 @@ Important settings are documented in `.env.example`:
 - `RAG_SEARCH_TOP_K`
 - `RAG_ANSWER_MAX_CONTEXT_CHUNKS`
 - `RAG_MIN_RELEVANCE_SCORE`
+- `RAG_RETRIEVAL_MODE`
+- `RAG_VECTOR_WEIGHT`
+- `RAG_KEYWORD_WEIGHT`
+- `RAG_VECTOR_CANDIDATES`
+- `RAG_KEYWORD_CANDIDATES`
 
 ## API Overview
 
@@ -181,7 +188,8 @@ Semantic search request:
 ```json
 {
   "query": "deployment checklist",
-  "top_k": 5
+  "top_k": 5,
+  "retrieval_mode": "hybrid"
 }
 ```
 
@@ -190,15 +198,29 @@ Semantic search response:
 ```json
 {
   "query": "deployment checklist",
+  "retrieval_mode": "hybrid",
   "results": [
     {
       "chunk_id": "...",
       "document_id": "...",
       "content": "...",
       "score": 0.82,
+      "vector_score": 0.79,
+      "keyword_score": 0.65,
+      "retrieval_source": "hybrid",
       "metadata": {}
     }
-  ]
+  ],
+  "metadata": {
+    "retrieval_mode": "hybrid",
+    "vector_candidates": 20,
+    "keyword_candidates": 20,
+    "vector_results": 20,
+    "keyword_results": 8,
+    "deduplicated_results": 24,
+    "final_results": 5,
+    "fusion_algorithm": "weighted_rrf"
+  }
 }
 ```
 
@@ -207,7 +229,8 @@ RAG query request:
 ```json
 {
   "question": "What does the deployment checklist require?",
-  "top_k": 5
+  "top_k": 5,
+  "retrieval_mode": "hybrid"
 }
 ```
 
@@ -223,6 +246,9 @@ RAG query response:
       "document_id": "...",
       "filename": "deployment.md",
       "score": 0.82,
+      "vector_score": 0.79,
+      "keyword_score": 0.65,
+      "retrieval_source": "hybrid",
       "content_preview": "..."
     }
   ],
@@ -230,10 +256,20 @@ RAG query response:
     "context_chunks_used": 1,
     "top_k": 5,
     "llm_model": "models/gemini-2.5-flash",
-    "context_char_count": 912
+    "context_char_count": 912,
+    "retrieval_mode": "hybrid",
+    "fusion_algorithm": "weighted_rrf"
   }
 }
 ```
+
+Retrieval modes:
+
+- `vector`: embeds the request text and retrieves chunks by pgvector similarity.
+- `keyword`: retrieves chunks by PostgreSQL full-text search over `document_chunks.content` and does not require a query embedding.
+- `hybrid`: retrieves vector and keyword candidates, deduplicates by chunk ID, and ranks with weighted reciprocal rank fusion.
+
+The default retrieval mode is configured with `RAG_RETRIEVAL_MODE`. PostgreSQL full-text behavior is production-specific; the default test suite uses deterministic SQLite-compatible behavior and optional PostgreSQL integration tests can be used to validate real FTS matching.
 
 ## Design Notes
 
@@ -243,4 +279,4 @@ RAG query response:
 - Redis is included for future async workers but is not used yet.
 - LangChain and Gemini are isolated behind RAG infrastructure adapters.
 - Tests use deterministic fake embeddings and fake LLM providers and do not call Gemini.
-- No frontend, conversation history, streaming, hybrid search, reranking, or parent-child chunking is included yet.
+- No frontend, conversation history, streaming, reranking, or parent-child chunking is included yet.

@@ -21,8 +21,10 @@ from rag_backend.modules.rag.application.ports import (
 from rag_backend.modules.rag.application.services import (
     IndexDocumentService,
     QueryRagService,
+    RetrievalService,
     SearchSimilarChunksService,
 )
+from rag_backend.modules.rag.domain.entities import RetrievalMode
 from rag_backend.modules.rag.infrastructure.documents import SqlAlchemyDocumentAccessAdapter
 from rag_backend.modules.rag.infrastructure.embeddings import GeminiEmbeddingProviderAdapter
 from rag_backend.modules.rag.infrastructure.extractors import CompositeTextExtractor
@@ -35,6 +37,7 @@ from rag_backend.modules.rag.interfaces.schemas import (
     QueryRequest,
     QueryResponse,
     RagSource,
+    RetrievalMetadata,
     SearchRequest,
     SearchResponse,
     SearchResultItem,
@@ -64,6 +67,29 @@ def get_llm_provider() -> LLMProviderPort:
     return GeminiLLMProviderAdapter(
         model=settings.gemini_llm_model,
         api_key=settings.gemini_api_key,
+    )
+
+
+def _retrieval_mode(value: str | None) -> RetrievalMode | None:
+    if value is None:
+        return None
+    return RetrievalMode(value)
+
+
+def _retrieval_service(
+    *,
+    embeddings: EmbeddingProviderPort,
+    chunks: SqlAlchemyChunkRepository,
+) -> RetrievalService:
+    settings = get_settings()
+    return RetrievalService(
+        embeddings=embeddings,
+        chunks=chunks,
+        default_mode=RetrievalMode(settings.rag_retrieval_mode),
+        vector_weight=settings.rag_vector_weight,
+        keyword_weight=settings.rag_keyword_weight,
+        vector_candidates=settings.rag_vector_candidates,
+        keyword_candidates=settings.rag_keyword_candidates,
     )
 
 
@@ -113,13 +139,13 @@ async def search_similar_chunks(
     embeddings: Annotated[EmbeddingProviderPort, Depends(get_embedding_provider)],
 ) -> SearchResponse:
     settings = get_settings()
+    chunks = SqlAlchemyChunkRepository(session)
     service = SearchSimilarChunksService(
         documents=SqlAlchemyDocumentAccessAdapter(
             session=session,
             storage_root=settings.local_storage_path,
         ),
-        embeddings=embeddings,
-        chunks=SqlAlchemyChunkRepository(session),
+        retrieval=_retrieval_service(embeddings=embeddings, chunks=chunks),
         default_top_k=settings.rag_search_top_k,
     )
     result = await service.search(
@@ -128,20 +154,35 @@ async def search_similar_chunks(
             workspace_id=workspace_id,
             query=request.query,
             top_k=request.top_k,
+            retrieval_mode=_retrieval_mode(request.retrieval_mode),
         )
     )
     return SearchResponse(
         query=result.query,
+        retrieval_mode=result.retrieval_mode.value,
         results=[
             SearchResultItem(
                 chunk_id=item.chunk_id,
                 document_id=item.document_id,
                 content=item.content,
                 score=item.score,
+                vector_score=item.vector_score,
+                keyword_score=item.keyword_score,
+                retrieval_source=item.retrieval_source.value,
                 metadata=item.metadata,
             )
             for item in result.results
         ],
+        metadata=RetrievalMetadata(
+            retrieval_mode=result.metadata.retrieval_mode.value,
+            vector_candidates=result.metadata.vector_candidates,
+            keyword_candidates=result.metadata.keyword_candidates,
+            vector_results=result.metadata.vector_results,
+            keyword_results=result.metadata.keyword_results,
+            deduplicated_results=result.metadata.deduplicated_results,
+            final_results=result.metadata.final_results,
+            fusion_algorithm=result.metadata.fusion_algorithm,
+        ),
     )
 
 
@@ -155,13 +196,13 @@ async def query_rag(
     llm: Annotated[LLMProviderPort, Depends(get_llm_provider)],
 ) -> QueryResponse:
     settings = get_settings()
+    chunks = SqlAlchemyChunkRepository(session)
     service = QueryRagService(
         documents=SqlAlchemyDocumentAccessAdapter(
             session=session,
             storage_root=settings.local_storage_path,
         ),
-        embeddings=embeddings,
-        chunks=SqlAlchemyChunkRepository(session),
+        retrieval=_retrieval_service(embeddings=embeddings, chunks=chunks),
         llm=llm,
         max_context_chunks=settings.rag_answer_max_context_chunks,
         min_relevance_score=settings.rag_min_relevance_score,
@@ -173,6 +214,7 @@ async def query_rag(
             workspace_id=workspace_id,
             question=request.question,
             top_k=request.top_k,
+            retrieval_mode=_retrieval_mode(request.retrieval_mode),
         )
     )
     return QueryResponse(
@@ -184,6 +226,9 @@ async def query_rag(
                 document_id=source.document_id,
                 filename=source.filename,
                 score=source.score,
+                vector_score=source.vector_score,
+                keyword_score=source.keyword_score,
+                retrieval_source=source.retrieval_source.value,
                 content_preview=source.content_preview,
             )
             for source in result.sources
@@ -193,5 +238,7 @@ async def query_rag(
             top_k=result.metadata.top_k,
             llm_model=result.metadata.llm_model,
             context_char_count=result.metadata.context_char_count,
+            retrieval_mode=result.metadata.retrieval_mode.value,
+            fusion_algorithm=result.metadata.fusion_algorithm,
         ),
     )
