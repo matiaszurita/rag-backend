@@ -6,9 +6,9 @@ from uuid import UUID
 
 class DocumentStatus(StrEnum):
     UPLOADED = "uploaded"
-    PROCESSING = "processing"
-    READY = "ready"
-    FAILED = "failed"
+    INDEXING = "indexing"
+    INDEXED = "indexed"
+    INDEX_FAILED = "index_failed"
 
 
 @dataclass(slots=True)

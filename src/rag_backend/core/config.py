@@ -38,6 +38,14 @@ class Settings(BaseSettings):
         alias="CORS_ALLOWED_ORIGINS",
     )
     max_upload_size_mb: int = Field(default=10, alias="MAX_UPLOAD_SIZE_MB")
+    gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
+    gemini_embedding_model: str = Field(
+        default="models/text-embedding-004",
+        alias="GEMINI_EMBEDDING_MODEL",
+    )
+    rag_chunk_size: int = Field(default=1000, alias="RAG_CHUNK_SIZE")
+    rag_chunk_overlap: int = Field(default=200, alias="RAG_CHUNK_OVERLAP")
+    rag_search_top_k: int = Field(default=5, alias="RAG_SEARCH_TOP_K")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     @model_validator(mode="after")

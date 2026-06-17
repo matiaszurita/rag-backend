@@ -68,6 +68,16 @@ class SqlAlchemyDocumentRepository:
         model = result.scalar_one_or_none()
         return _to_domain(model) if model else None
 
+    async def update_status(self, document_id: UUID, status: DocumentStatus) -> Document | None:
+        result = await self.session.execute(
+            sa.update(DocumentORM)
+            .where(DocumentORM.id == document_id, DocumentORM.deleted_at.is_(None))
+            .values(status=status)
+            .returning(DocumentORM)
+        )
+        model = result.scalar_one_or_none()
+        return _to_domain(model) if model else None
+
     async def mark_deleted(self, document_id: UUID) -> None:
         await self.session.execute(
             sa.update(DocumentORM)

@@ -1,0 +1,5 @@
+ContextVault es una plataforma de conocimiento técnico construida con FastAPI, PostgreSQL, pgvector y Gemini embeddings.
+
+La primera fase del RAG implementa búsqueda vectorial semántica. El documento se divide en chunks, cada chunk se transforma en embedding y luego se guarda en PostgreSQL usando pgvector.
+
+Más adelante el sistema agregará RAG híbrido, reranking y parent-child chunks para mejorar la precisión y el contexto de las respuestas.
