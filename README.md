@@ -56,6 +56,7 @@ Cross-cutting concerns such as settings, database setup, logging, auth primitive
 - RAG Phase 1 with explicit document indexing and workspace-scoped semantic search
 - RAG Phase 2 with source-backed question answering over retrieved chunks
 - RAG Phase 4 backend retrieval with configurable vector, keyword, and hybrid search
+- RAG Phase 5 foundation with optional no-op/fake reranking behind an application port
 
 ## RAG
 
@@ -68,13 +69,14 @@ ContextVault uses a progressive RAG architecture. This backend currently impleme
 - Search semantically similar chunks inside an authenticated user's workspace
 - Search lexical/full-text matches inside chunk content for exact technical terms
 - Combine vector and keyword retrieval with weighted reciprocal rank fusion in hybrid mode
+- Optionally rerank retrieved candidates through a provider-neutral `RerankerPort`
 - Ask a question against retrieved chunks and generate a Gemini Flash answer with sources
 
 The `/rag/search` endpoint returns retrieved chunks only and is kept as a debug retrieval endpoint. It exposes retrieval mode, score breakdowns, and retrieval metadata. The `/rag/query` endpoint retrieves relevant chunks with the same retrieval modes, builds controlled context, calls the configured LLM, and returns an answer with sources.
 
 Planned later phases are intentionally out of scope here:
 
-- Reranking
+- Real external reranking providers
 - Parent-child chunks
 - Conversation history and streaming
 - Redis/background indexing workers
@@ -165,6 +167,9 @@ Important settings are documented in `.env.example`:
 - `RAG_KEYWORD_WEIGHT`
 - `RAG_VECTOR_CANDIDATES`
 - `RAG_KEYWORD_CANDIDATES`
+- `RAG_RERANKING_ENABLED`
+- `RAG_RERANKING_PROVIDER`
+- `RAG_RERANKING_CANDIDATES`
 
 ## API Overview
 
@@ -189,7 +194,8 @@ Semantic search request:
 {
   "query": "deployment checklist",
   "top_k": 5,
-  "retrieval_mode": "hybrid"
+  "retrieval_mode": "hybrid",
+  "reranking_enabled": true
 }
 ```
 
@@ -207,6 +213,9 @@ Semantic search response:
       "score": 0.82,
       "vector_score": 0.79,
       "keyword_score": 0.65,
+      "rerank_score": null,
+      "original_rank": null,
+      "reranked_rank": null,
       "retrieval_source": "hybrid",
       "metadata": {}
     }
@@ -219,7 +228,12 @@ Semantic search response:
     "keyword_results": 8,
     "deduplicated_results": 24,
     "final_results": 5,
-    "fusion_algorithm": "weighted_rrf"
+    "fusion_algorithm": "weighted_rrf",
+    "reranking_enabled": true,
+    "reranking_provider": "noop",
+    "reranking_applied": true,
+    "reranking_candidates": 20,
+    "candidates_before_rerank": 5
   }
 }
 ```
@@ -230,7 +244,8 @@ RAG query request:
 {
   "question": "What does the deployment checklist require?",
   "top_k": 5,
-  "retrieval_mode": "hybrid"
+  "retrieval_mode": "hybrid",
+  "reranking_enabled": true
 }
 ```
 
@@ -248,6 +263,9 @@ RAG query response:
       "score": 0.82,
       "vector_score": 0.79,
       "keyword_score": 0.65,
+      "rerank_score": null,
+      "original_rank": null,
+      "reranked_rank": null,
       "retrieval_source": "hybrid",
       "content_preview": "..."
     }
@@ -258,7 +276,10 @@ RAG query response:
     "llm_model": "models/gemini-2.5-flash",
     "context_char_count": 912,
     "retrieval_mode": "hybrid",
-    "fusion_algorithm": "weighted_rrf"
+    "fusion_algorithm": "weighted_rrf",
+    "reranking_enabled": true,
+    "reranking_provider": "noop",
+    "reranking_applied": true
   }
 }
 ```
@@ -269,7 +290,9 @@ Retrieval modes:
 - `keyword`: retrieves chunks by PostgreSQL full-text search over `document_chunks.content` and does not require a query embedding.
 - `hybrid`: retrieves vector and keyword candidates, deduplicates by chunk ID, and ranks with weighted reciprocal rank fusion.
 
-The default retrieval mode is configured with `RAG_RETRIEVAL_MODE`. PostgreSQL full-text behavior is production-specific; the default test suite uses deterministic SQLite-compatible behavior and optional PostgreSQL integration tests can be used to validate real FTS matching.
+The default retrieval mode is configured with `RAG_RETRIEVAL_MODE`. Optional reranking is configured with `RAG_RERANKING_ENABLED`, `RAG_RERANKING_PROVIDER`, and `RAG_RERANKING_CANDIDATES`. The only provider in this phase is `noop`, which keeps behavior deterministic and avoids external provider calls.
+
+PostgreSQL full-text behavior is production-specific; the default test suite uses deterministic SQLite-compatible behavior and optional PostgreSQL integration tests can be used to validate real FTS matching.
 
 ## Design Notes
 
@@ -279,4 +302,4 @@ The default retrieval mode is configured with `RAG_RETRIEVAL_MODE`. PostgreSQL f
 - Redis is included for future async workers but is not used yet.
 - LangChain and Gemini are isolated behind RAG infrastructure adapters.
 - Tests use deterministic fake embeddings and fake LLM providers and do not call Gemini.
-- No frontend, conversation history, streaming, reranking, or parent-child chunking is included yet.
+- No frontend, conversation history, streaming, real reranking provider, or parent-child chunking is included yet.

@@ -39,3 +39,25 @@ def test_settings_parse_cors_allowed_origins_json(monkeypatch: pytest.MonkeyPatc
         "http://localhost:5173",
         "http://127.0.0.1:5173",
     ]
+
+
+def test_settings_default_reranking_is_disabled_noop() -> None:
+    settings = Settings()
+
+    assert settings.rag_reranking_enabled is False
+    assert settings.rag_reranking_provider == "noop"
+    assert settings.rag_reranking_candidates == 20
+
+
+def test_settings_reject_invalid_reranking_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RAG_RERANKING_PROVIDER", "gemini")
+
+    with pytest.raises(ValueError, match="RAG_RERANKING_PROVIDER must be noop"):
+        Settings()
+
+
+def test_settings_reject_invalid_reranking_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RAG_RERANKING_CANDIDATES", "0")
+
+    with pytest.raises(ValueError, match="RAG_RERANKING_CANDIDATES must be at least 1"):
+        Settings()

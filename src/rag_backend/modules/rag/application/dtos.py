@@ -25,6 +25,7 @@ class SearchSimilarChunksCommand:
     query: str
     top_k: int | None
     retrieval_mode: RetrievalMode | None = None
+    reranking_enabled: bool | None = None
 
 
 @dataclass(slots=True)
@@ -35,6 +36,9 @@ class SimilarChunkDTO:
     score: float
     vector_score: float | None = None
     keyword_score: float | None = None
+    rerank_score: float | None = None
+    original_rank: int | None = None
+    reranked_rank: int | None = None
     retrieval_source: RetrievalSource = RetrievalSource.VECTOR
     metadata: dict[str, object] = field(default_factory=dict)
 
@@ -49,6 +53,11 @@ class RetrievalMetadataDTO:
     deduplicated_results: int
     final_results: int
     fusion_algorithm: str | None = None
+    reranking_enabled: bool = False
+    reranking_provider: str = "noop"
+    reranking_applied: bool = False
+    reranking_candidates: int = 0
+    candidates_before_rerank: int = 0
 
 
 @dataclass(slots=True)
@@ -66,6 +75,7 @@ class QueryRagCommand:
     question: str
     top_k: int | None
     retrieval_mode: RetrievalMode | None = None
+    reranking_enabled: bool | None = None
 
 
 @dataclass(slots=True)
@@ -78,6 +88,9 @@ class RagSourceDTO:
     keyword_score: float | None
     retrieval_source: RetrievalSource
     content_preview: str
+    rerank_score: float | None = None
+    original_rank: int | None = None
+    reranked_rank: int | None = None
 
 
 @dataclass(slots=True)
@@ -88,6 +101,9 @@ class QueryRagMetadataDTO:
     context_char_count: int
     retrieval_mode: RetrievalMode
     fusion_algorithm: str | None = None
+    reranking_enabled: bool = False
+    reranking_provider: str = "noop"
+    reranking_applied: bool = False
 
 
 @dataclass(slots=True)

@@ -1,4 +1,7 @@
 import hashlib
+from uuid import UUID
+
+from rag_backend.modules.rag.domain.entities import SimilarChunk
 
 
 class FakeEmbeddingProvider:
@@ -39,3 +42,44 @@ class FakeLLMProvider:
         if self.fail:
             raise RuntimeError("fake llm failure with secret-token")
         return self.answer
+
+
+class NoOpReranker:
+    async def rerank(
+        self,
+        *,
+        query: str,
+        candidates: list[SimilarChunk],
+        top_k: int,
+    ) -> list[SimilarChunk]:
+        return candidates[:top_k]
+
+
+class ScoreBasedFakeReranker:
+    def __init__(self, scores: dict[UUID, float]) -> None:
+        self.scores = scores
+        self.calls: list[dict[str, object]] = []
+
+    async def rerank(
+        self,
+        *,
+        query: str,
+        candidates: list[SimilarChunk],
+        top_k: int,
+    ) -> list[SimilarChunk]:
+        self.calls.append({"query": query, "candidates": candidates, "top_k": top_k})
+        ranked = sorted(
+            enumerate(candidates, start=1),
+            key=lambda item: self.scores.get(item[1].chunk_id, item[1].score),
+            reverse=True,
+        )
+        results = [chunk for _, chunk in ranked[:top_k]]
+        for reranked_rank, chunk in enumerate(results, start=1):
+            chunk.original_rank = next(
+                original_rank
+                for original_rank, candidate in enumerate(candidates, start=1)
+                if candidate.chunk_id == chunk.chunk_id
+            )
+            chunk.reranked_rank = reranked_rank
+            chunk.rerank_score = self.scores.get(chunk.chunk_id, chunk.score)
+        return results

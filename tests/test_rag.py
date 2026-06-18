@@ -1,13 +1,15 @@
 import io
 from inspect import getsource
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
 
 from rag_backend.core.database import get_session_maker
 from rag_backend.modules.documents.infrastructure.models import DocumentORM
+from rag_backend.modules.rag.application.dtos import QueryRagCommand, RetrievalMetadataDTO
 from rag_backend.modules.rag.application.services import QueryRagService
+from rag_backend.modules.rag.domain.entities import RetrievalMode, RetrievalSource, SimilarChunk
 from rag_backend.modules.rag.infrastructure.fakes import FakeEmbeddingProvider, FakeLLMProvider
 from rag_backend.modules.rag.infrastructure.models import DocumentChunkORM
 from rag_backend.modules.rag.interfaces.router import get_embedding_provider, get_llm_provider
@@ -15,6 +17,32 @@ from rag_backend.modules.rag.interfaces.router import get_embedding_provider, ge
 INSUFFICIENT_CONTEXT_ANSWER = (
     "No encontré información suficiente en los documentos indexados para responder esta pregunta."
 )
+
+
+class AlwaysExistingDocuments:
+    async def get_document_for_owner(self, **kwargs):  # noqa: ANN003
+        return None
+
+    async def workspace_exists_for_owner(self, **kwargs) -> bool:  # noqa: ANN003
+        return True
+
+    async def read_document_content(self, storage_path: str) -> bytes:
+        return b""
+
+    async def update_document_status(self, document_id, status) -> None:  # noqa: ANN001
+        return None
+
+    async def commit(self) -> None:
+        return None
+
+
+class StaticRetrieval:
+    def __init__(self, results: list[SimilarChunk], metadata: RetrievalMetadataDTO) -> None:
+        self.results = results
+        self.metadata = metadata
+
+    async def retrieve(self, **kwargs):  # noqa: ANN003
+        return self.results, self.metadata
 
 
 async def _create_user_workspace(client, email: str):
@@ -288,6 +316,104 @@ async def test_search_still_returns_chunks_only_after_query_endpoint(client) -> 
     assert "keyword_score" in result
     assert result["retrieval_source"] in {"vector", "keyword", "hybrid"}
     assert "answer" not in payload
+
+
+@pytest.mark.asyncio
+async def test_search_includes_reranking_metadata_when_requested(client) -> None:
+    token, workspace_id = await _create_user_workspace(client, "rag-search-rerank@example.com")
+    document = await _upload_document(
+        client,
+        token,
+        workspace_id,
+        "rerank.txt",
+        b"reranking debug chunk",
+    )
+    await client.post(
+        f"/api/v1/workspaces/{workspace_id}/documents/{document['id']}/index",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    response = await client.post(
+        f"/api/v1/workspaces/{workspace_id}/rag/search",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"query": "reranking", "top_k": 1, "reranking_enabled": True},
+    )
+
+    assert response.status_code == 200
+    metadata = response.json()["metadata"]
+    assert metadata["reranking_enabled"] is True
+    assert metadata["reranking_provider"] == "noop"
+    assert metadata["reranking_applied"] is True
+    assert metadata["candidates_before_rerank"] >= 1
+    assert metadata["final_results"] == 1
+
+
+@pytest.mark.asyncio
+async def test_rag_query_context_follows_reranked_order() -> None:
+    first = SimilarChunk(
+        chunk_id=uuid4(),
+        document_id=uuid4(),
+        content="first reranked context",
+        score=0.4,
+        metadata={"source": "first.txt"},
+        rerank_score=0.9,
+        original_rank=2,
+        reranked_rank=1,
+        retrieval_source=RetrievalSource.VECTOR,
+    )
+    second = SimilarChunk(
+        chunk_id=uuid4(),
+        document_id=uuid4(),
+        content="second reranked context",
+        score=0.8,
+        metadata={"source": "second.txt"},
+        rerank_score=0.5,
+        original_rank=1,
+        reranked_rank=2,
+        retrieval_source=RetrievalSource.VECTOR,
+    )
+    retrieval = StaticRetrieval(
+        [first, second],
+        RetrievalMetadataDTO(
+            retrieval_mode=RetrievalMode.VECTOR,
+            vector_candidates=2,
+            keyword_candidates=0,
+            vector_results=2,
+            keyword_results=0,
+            deduplicated_results=2,
+            final_results=2,
+            reranking_enabled=True,
+            reranking_applied=True,
+            candidates_before_rerank=2,
+        ),
+    )
+    llm = FakeLLMProvider(answer="ordered answer")
+    service = QueryRagService(
+        documents=AlwaysExistingDocuments(),
+        retrieval=retrieval,
+        llm=llm,
+        max_context_chunks=2,
+        min_relevance_score=0.0,
+        llm_model="fake-model",
+    )
+
+    result = await service.query(
+        QueryRagCommand(
+            owner_id=uuid4(),
+            workspace_id=uuid4(),
+            question="order?",
+            top_k=2,
+            reranking_enabled=True,
+        )
+    )
+
+    user_prompt = llm.calls[0]["user_prompt"]
+    assert user_prompt.index("first reranked context") < user_prompt.index(
+        "second reranked context"
+    )
+    assert result.sources[0].reranked_rank == 1
+    assert result.metadata.reranking_enabled is True
+    assert result.metadata.reranking_applied is True
 
 
 @pytest.mark.asyncio

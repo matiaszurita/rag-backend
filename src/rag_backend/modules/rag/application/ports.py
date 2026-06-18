@@ -29,6 +29,16 @@ class LLMProviderPort(Protocol):
     async def generate_answer(self, *, system_prompt: str, user_prompt: str) -> str: ...
 
 
+class RerankerPort(Protocol):
+    async def rerank(
+        self,
+        *,
+        query: str,
+        candidates: list[SimilarChunk],
+        top_k: int,
+    ) -> list[SimilarChunk]: ...
+
+
 class ChunkRepositoryPort(Protocol):
     async def replace_for_document(
         self,

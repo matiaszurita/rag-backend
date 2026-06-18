@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     rag_keyword_weight: float = Field(default=0.35, alias="RAG_KEYWORD_WEIGHT")
     rag_vector_candidates: int = Field(default=20, alias="RAG_VECTOR_CANDIDATES")
     rag_keyword_candidates: int = Field(default=20, alias="RAG_KEYWORD_CANDIDATES")
+    rag_reranking_enabled: bool = Field(default=False, alias="RAG_RERANKING_ENABLED")
+    rag_reranking_provider: str = Field(default="noop", alias="RAG_RERANKING_PROVIDER")
+    rag_reranking_candidates: int = Field(default=20, alias="RAG_RERANKING_CANDIDATES")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     @field_validator("rag_retrieval_mode")
@@ -62,6 +65,14 @@ class Settings(BaseSettings):
         normalized = value.strip().lower()
         if normalized not in {"vector", "keyword", "hybrid"}:
             raise ValueError("RAG_RETRIEVAL_MODE must be vector, keyword, or hybrid")
+        return normalized
+
+    @field_validator("rag_reranking_provider")
+    @classmethod
+    def validate_rag_reranking_provider(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"noop"}:
+            raise ValueError("RAG_RERANKING_PROVIDER must be noop")
         return normalized
 
     @model_validator(mode="after")
@@ -82,6 +93,8 @@ class Settings(BaseSettings):
             raise ValueError("RAG_VECTOR_CANDIDATES must be at least 1")
         if self.rag_keyword_candidates < 1:
             raise ValueError("RAG_KEYWORD_CANDIDATES must be at least 1")
+        if self.rag_reranking_candidates < 1:
+            raise ValueError("RAG_RERANKING_CANDIDATES must be at least 1")
         return self
 
     @property

@@ -38,4 +38,7 @@ class SimilarChunk:
     metadata: dict[str, object]
     vector_score: float | None = None
     keyword_score: float | None = None
+    rerank_score: float | None = None
+    original_rank: int | None = None
+    reranked_rank: int | None = None
     retrieval_source: RetrievalSource = RetrievalSource.VECTOR

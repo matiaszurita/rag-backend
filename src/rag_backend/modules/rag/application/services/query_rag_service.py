@@ -66,6 +66,7 @@ class QueryRagService:
             query=question,
             top_k=top_k,
             retrieval_mode=command.retrieval_mode,
+            reranking_enabled=command.reranking_enabled,
         )
         if retrieval_metadata.retrieval_mode == RetrievalMode.VECTOR:
             relevant_chunks = [
@@ -86,6 +87,9 @@ class QueryRagService:
                     context_char_count=0,
                     retrieval_mode=retrieval_metadata.retrieval_mode,
                     fusion_algorithm=retrieval_metadata.fusion_algorithm,
+                    reranking_enabled=retrieval_metadata.reranking_enabled,
+                    reranking_provider=retrieval_metadata.reranking_provider,
+                    reranking_applied=retrieval_metadata.reranking_applied,
                 ),
             )
 
@@ -117,6 +121,9 @@ class QueryRagService:
                 context_char_count=sum(len(result.content) for result in relevant_chunks),
                 retrieval_mode=retrieval_metadata.retrieval_mode,
                 fusion_algorithm=retrieval_metadata.fusion_algorithm,
+                reranking_enabled=retrieval_metadata.reranking_enabled,
+                reranking_provider=retrieval_metadata.reranking_provider,
+                reranking_applied=retrieval_metadata.reranking_applied,
             ),
         )
 
@@ -130,6 +137,9 @@ class QueryRagService:
             keyword_score=chunk.keyword_score,
             retrieval_source=chunk.retrieval_source,
             content_preview=self._preview(chunk.content),
+            rerank_score=chunk.rerank_score,
+            original_rank=chunk.original_rank,
+            reranked_rank=chunk.reranked_rank,
         )
 
     def _preview(self, content: str) -> str:

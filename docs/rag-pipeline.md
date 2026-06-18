@@ -216,6 +216,9 @@ Variables configurables actualmente por settings/env:
 - `RAG_KEYWORD_WEIGHT`: peso de la busqueda keyword en hybrid.
 - `RAG_VECTOR_CANDIDATES`: cantidad de candidatos vectoriales antes de fusionar.
 - `RAG_KEYWORD_CANDIDATES`: cantidad de candidatos keyword antes de fusionar.
+- `RAG_RERANKING_ENABLED`: activa o desactiva reranking por defecto.
+- `RAG_RERANKING_PROVIDER`: proveedor de reranking; en esta fase solo existe `noop`.
+- `RAG_RERANKING_CANDIDATES`: cantidad maxima de candidatos que se pasan al reranker.
 
 Parametro interno actual:
 
@@ -223,7 +226,53 @@ Parametro interno actual:
 
 Actualmente `RRF_K` no esta expuesto como variable de entorno. No existe `RAG_RRF_K` en esta fase.
 
-## 10. Query answering
+## 10. Reranking opcional
+
+Reranking es un paso opcional posterior al retrieval inicial. Toma los candidatos recuperados por vector, keyword o hybrid y puede reordenarlos antes de seleccionar los chunks finales.
+
+El flujo con reranking habilitado queda asi:
+
+```text
+pregunta
+-> retrieval obtiene candidatos iniciales
+-> reranker reordena candidatos
+-> se seleccionan los mejores chunks
+-> se construye contexto
+-> LLM genera respuesta
+```
+
+En esta fase, el backend agrega la arquitectura de reranking sin depender de un proveedor externo real. El proveedor por defecto es `noop`, que conserva el orden actual. Esto mantiene el pipeline testeable y permite activar/desactivar el paso sin llamadas adicionales a Gemini.
+
+Reranking puede controlarse por settings o por request:
+
+```json
+{
+  "query": "JWT_SECRET_KEY",
+  "top_k": 5,
+  "retrieval_mode": "hybrid",
+  "reranking_enabled": true
+}
+```
+
+Si `reranking_enabled` no viene en el request, el backend usa `RAG_RERANKING_ENABLED`.
+
+La metadata de retrieval incluye diagnosticos como:
+
+- `reranking_enabled`
+- `reranking_provider`
+- `reranking_applied`
+- `reranking_candidates`
+- `candidates_before_rerank`
+
+Los resultados pueden incluir campos opcionales:
+
+- `rerank_score`
+- `original_rank`
+- `reranked_rank`
+
+El campo `score` conserva el score de retrieval o fusion. No se reemplaza por `rerank_score`, porque ambos pueden tener escalas distintas.
+
+## 11. Query answering
 
 ContextVault tiene dos endpoints RAG principales:
 
@@ -245,7 +294,7 @@ El flujo de `/rag/query` es:
 7. Llamar a Gemini mediante `LLMProviderPort`.
 8. Devolver `answer`, `sources` y `metadata`.
 
-## 11. Sources y metadata
+## 12. Sources y metadata
 
 Las fuentes permiten explicar de donde salio la respuesta. Esto es clave para un sistema RAG porque ayuda a revisar si el modelo respondio usando documentos reales.
 
@@ -254,6 +303,9 @@ Campos importantes:
 - `score`: score final usado para ordenar el resultado. En hybrid es el score fusionado normalizado.
 - `vector_score`: score original de la busqueda vectorial, si el chunk vino por ese camino.
 - `keyword_score`: score original de la busqueda keyword, si el chunk vino por ese camino.
+- `rerank_score`: score opcional asignado por el reranker cuando aplica.
+- `original_rank`: posicion opcional antes de reranking.
+- `reranked_rank`: posicion opcional despues de reranking.
 - `retrieval_source`: indica si el chunk vino de `vector`, `keyword` o de ambos (`hybrid`).
 - `fusion_algorithm`: indica el algoritmo usado para fusionar resultados; actualmente `weighted_rrf` cuando aplica.
 
@@ -269,7 +321,7 @@ La metadata tambien incluye datos utiles como:
 - modelo LLM usado en query answering
 - cantidad de chunks usados como contexto
 
-## 12. Arquitectura del modulo RAG
+## 13. Arquitectura del modulo RAG
 
 El modulo RAG sigue una estructura de capas:
 
@@ -285,17 +337,18 @@ Piezas principales:
 - `SearchSimilarChunksService`: caso de uso del endpoint de debug `/rag/search`.
 - `QueryRagService`: caso de uso para responder preguntas con contexto recuperado.
 - `RagPromptBuilder`: construye prompts para el LLM a partir de pregunta y chunks.
-- Ports: abstracciones como `EmbeddingProviderPort`, `LLMProviderPort`, `ChunkRepositoryPort`, `TextExtractorPort` y `TextSplitterPort`.
+- Ports: abstracciones como `EmbeddingProviderPort`, `LLMProviderPort`, `RerankerPort`, `ChunkRepositoryPort`, `TextExtractorPort` y `TextSplitterPort`.
 - Adapters: implementaciones concretas, por ejemplo Gemini embeddings, Gemini LLM y LangChain splitter.
+- Rerankers: implementaciones detras de `RerankerPort`; en esta fase el default es `noop`.
 - Repositories: persistencia y busqueda de chunks en SQLAlchemy/PostgreSQL.
 
 La regla importante es que la logica RAG no vive en los routers. Los routers componen dependencias, validan HTTP, llaman servicios y convierten DTOs a schemas de respuesta.
 
-## 13. Que no hace todavia
+## 14. Que no hace todavia
 
 El pipeline actual todavia no incluye:
 
-- Reranking.
+- Un proveedor real externo de reranking.
 - Parent-child chunks.
 - Historial conversacional.
 - Streaming de respuestas.
@@ -303,27 +356,27 @@ El pipeline actual todavia no incluye:
 
 Estas capacidades estan fuera del alcance actual y no deben asumirse como implementadas.
 
-## 14. Proxima fase: reranking
+## 15. Proxima fase: provider real de reranking
 
-La siguiente fase natural es reranking.
+La siguiente fase natural despues de la arquitectura de reranking es agregar un adapter real.
 
-Reranking significa tomar los candidatos recuperados por vector, keyword o hybrid y reordenarlos con un modelo o estrategia mas precisa antes de construir el contexto para el LLM.
+Ese adapter podria usar un modelo dedicado de reranking o un LLM con salida estructurada. Debe integrarse detras de `RerankerPort` y no llamarse directamente desde routers ni desde `QueryRagService`.
 
-En el pipeline quedaria despues del retrieval inicial:
+El objetivo futuro seria reemplazar el comportamiento `noop` por una estrategia mas precisa:
 
 ```text
 pregunta
 -> hybrid retrieval obtiene candidatos
--> reranking reordena candidatos
+-> provider real de reranking reordena candidatos
 -> se construye contexto con los mejores
 -> LLM genera respuesta
 ```
 
-El objetivo es mejorar la calidad del contexto final. No cambia la idea de RAG; mejora que fragmentos llegan al prompt.
+El objetivo seria mejorar la calidad del contexto final. No cambia la idea de RAG; mejora que fragmentos llegan al prompt.
 
-Segun `AGENTS.md`, reranking debe agregarse como port/adapter y debe integrarse alrededor de `RetrievalService`. No debe llamarse directamente desde routers ni mezclarse con detalles de proveedor en la capa de interfaces.
+Segun `AGENTS.md`, los nuevos providers deben agregarse como port/adapter y deben integrarse alrededor de `RetrievalService`. No deben llamarse directamente desde routers ni mezclarse con detalles de proveedor en la capa de interfaces.
 
-## 15. Comandos utiles
+## 16. Comandos utiles
 
 Validar linting:
 
@@ -352,7 +405,8 @@ curl -X POST "http://localhost:8000/api/v1/workspaces/$WORKSPACE_ID/rag/search" 
   -d '{
     "query": "JWT_SECRET_KEY",
     "top_k": 5,
-    "retrieval_mode": "hybrid"
+    "retrieval_mode": "hybrid",
+    "reranking_enabled": true
   }'
 ```
 
@@ -365,7 +419,8 @@ curl -X POST "http://localhost:8000/api/v1/workspaces/$WORKSPACE_ID/rag/query" \
   -d '{
     "question": "Para que sirve JWT_SECRET_KEY?",
     "top_k": 5,
-    "retrieval_mode": "hybrid"
+    "retrieval_mode": "hybrid",
+    "reranking_enabled": true
   }'
 ```
 

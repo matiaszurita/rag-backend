@@ -14,6 +14,7 @@ class SearchRequest(BaseModel):
     query: str
     top_k: int | None = Field(default=None, ge=1)
     retrieval_mode: Literal["vector", "keyword", "hybrid"] | None = None
+    reranking_enabled: bool | None = None
 
 
 class SearchResultItem(BaseModel):
@@ -23,6 +24,9 @@ class SearchResultItem(BaseModel):
     score: float
     vector_score: float | None = None
     keyword_score: float | None = None
+    rerank_score: float | None = None
+    original_rank: int | None = None
+    reranked_rank: int | None = None
     retrieval_source: Literal["vector", "keyword", "hybrid"]
     metadata: dict[str, object]
 
@@ -36,6 +40,11 @@ class RetrievalMetadata(BaseModel):
     deduplicated_results: int
     final_results: int
     fusion_algorithm: str | None = None
+    reranking_enabled: bool = False
+    reranking_provider: str = "noop"
+    reranking_applied: bool = False
+    reranking_candidates: int = 0
+    candidates_before_rerank: int = 0
 
 
 class SearchResponse(BaseModel):
@@ -49,6 +58,7 @@ class QueryRequest(BaseModel):
     question: str
     top_k: int | None = Field(default=None, ge=1)
     retrieval_mode: Literal["vector", "keyword", "hybrid"] | None = None
+    reranking_enabled: bool | None = None
 
 
 class RagSource(BaseModel):
@@ -58,6 +68,9 @@ class RagSource(BaseModel):
     score: float
     vector_score: float | None = None
     keyword_score: float | None = None
+    rerank_score: float | None = None
+    original_rank: int | None = None
+    reranked_rank: int | None = None
     retrieval_source: Literal["vector", "keyword", "hybrid"]
     content_preview: str
 
@@ -69,6 +82,9 @@ class QueryMetadata(BaseModel):
     context_char_count: int
     retrieval_mode: Literal["vector", "keyword", "hybrid"]
     fusion_algorithm: str | None = None
+    reranking_enabled: bool = False
+    reranking_provider: str = "noop"
+    reranking_applied: bool = False
 
 
 class QueryResponse(BaseModel):

@@ -41,6 +41,7 @@ class SearchSimilarChunksService:
             query=query,
             top_k=top_k,
             retrieval_mode=command.retrieval_mode,
+            reranking_enabled=command.reranking_enabled,
         )
         return SearchSimilarChunksResult(
             query=query,
@@ -53,6 +54,9 @@ class SearchSimilarChunksService:
                     score=result.score,
                     vector_score=result.vector_score,
                     keyword_score=result.keyword_score,
+                    rerank_score=result.rerank_score,
+                    original_rank=result.original_rank,
+                    reranked_rank=result.reranked_rank,
                     retrieval_source=result.retrieval_source,
                     metadata=result.metadata,
                 )
