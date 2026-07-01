@@ -70,7 +70,7 @@ class ScoreBasedFakeReranker:
         self.calls.append({"query": query, "candidates": candidates, "top_k": top_k})
         ranked = sorted(
             enumerate(candidates, start=1),
-            key=lambda item: self.scores.get(item[1].chunk_id, item[1].score),
+            key=lambda item: self.scores.get(item[1].chunk_id, 0.0),
             reverse=True,
         )
         results = [chunk for _, chunk in ranked[:top_k]]
@@ -81,5 +81,5 @@ class ScoreBasedFakeReranker:
                 if candidate.chunk_id == chunk.chunk_id
             )
             chunk.reranked_rank = reranked_rank
-            chunk.rerank_score = self.scores.get(chunk.chunk_id, chunk.score)
+            chunk.rerank_score = self.scores.get(chunk.chunk_id, 0.0)
         return results

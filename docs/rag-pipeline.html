@@ -1,0 +1,1216 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pipeline RAG de ContextVault</title>
+    <style>
+      :root {
+        --bg: #071018;
+        --bg-elevated: #0d1823;
+        --bg-panel: #101f2c;
+        --bg-soft: #132635;
+        --border: rgba(140, 174, 199, 0.18);
+        --text: #eaf3fb;
+        --muted: #9db3c7;
+        --cyan: #55d6ff;
+        --cyan-soft: rgba(85, 214, 255, 0.16);
+        --orange: #ff9a52;
+        --orange-soft: rgba(255, 154, 82, 0.14);
+        --green: #5fe0a6;
+        --green-soft: rgba(95, 224, 166, 0.14);
+        --red: #ff7d7d;
+        --shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+        --radius: 18px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+          "Segoe UI", sans-serif;
+        background:
+          radial-gradient(circle at top left, rgba(85, 214, 255, 0.08), transparent 28%),
+          radial-gradient(circle at top right, rgba(255, 154, 82, 0.08), transparent 24%),
+          linear-gradient(180deg, #060c13 0%, var(--bg) 100%);
+        color: var(--text);
+        line-height: 1.65;
+      }
+
+      a {
+        color: var(--cyan);
+      }
+
+      code,
+      pre {
+        font-family: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono",
+          Menlo, monospace;
+      }
+
+      .page {
+        width: min(1200px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 24px 0 80px;
+      }
+
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        backdrop-filter: blur(14px);
+        background: rgba(7, 16, 24, 0.8);
+        border-bottom: 1px solid rgba(140, 174, 199, 0.1);
+      }
+
+      .topbar-inner {
+        width: min(1200px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 14px 0;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      .brand-mark {
+        width: 12px;
+        height: 12px;
+        border-radius: 999px;
+        background: linear-gradient(135deg, var(--cyan), var(--green));
+        box-shadow: 0 0 24px rgba(85, 214, 255, 0.65);
+      }
+
+      .topnav {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .topnav a {
+        padding: 8px 12px;
+        border-radius: 999px;
+        text-decoration: none;
+        color: var(--muted);
+        font-size: 0.92rem;
+        border: 1px solid transparent;
+      }
+
+      .topnav a:hover {
+        color: var(--text);
+        border-color: var(--border);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .hero {
+        margin-top: 28px;
+        padding: 36px;
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        background:
+          linear-gradient(135deg, rgba(85, 214, 255, 0.08), transparent 46%),
+          linear-gradient(160deg, rgba(95, 224, 166, 0.08), transparent 40%),
+          var(--bg-elevated);
+        box-shadow: var(--shadow);
+      }
+
+      .eyebrow,
+      .section-kicker {
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        font-size: 0.76rem;
+        color: var(--cyan);
+        margin-bottom: 10px;
+      }
+
+      h1,
+      h2,
+      h3 {
+        line-height: 1.15;
+        margin: 0;
+      }
+
+      h1 {
+        font-size: clamp(2.4rem, 5vw, 4.6rem);
+        margin-bottom: 14px;
+      }
+
+      .hero p {
+        max-width: 760px;
+        color: var(--muted);
+        font-size: 1.05rem;
+        margin: 0;
+      }
+
+      .badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 22px;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        font-size: 0.9rem;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--text);
+      }
+
+      .badge::before {
+        content: "";
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: currentColor;
+        opacity: 0.92;
+      }
+
+      .badge.cyan {
+        color: var(--cyan);
+      }
+
+      .badge.orange {
+        color: var(--orange);
+      }
+
+      .badge.green {
+        color: var(--green);
+      }
+
+      .badge.muted {
+        color: var(--muted);
+      }
+
+      .summary-grid,
+      .three-grid,
+      .two-grid,
+      .meta-grid {
+        display: grid;
+        gap: 18px;
+      }
+
+      .summary-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        margin-top: 26px;
+      }
+
+      .three-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+      }
+
+      .two-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+
+      .meta-grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .stat,
+      .card,
+      .callout,
+      .code-block,
+      .timeline,
+      .section {
+        border: 1px solid var(--border);
+        background: var(--bg-panel);
+        border-radius: var(--radius);
+      }
+
+      .stat {
+        padding: 18px;
+      }
+
+      .stat-label {
+        color: var(--muted);
+        font-size: 0.86rem;
+        margin-bottom: 8px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .stat-value {
+        font-size: 1.28rem;
+        font-weight: 700;
+      }
+
+      .section {
+        margin-top: 26px;
+        padding: 28px;
+        box-shadow: var(--shadow);
+      }
+
+      .section-header {
+        margin-bottom: 18px;
+      }
+
+      .section-header h2 {
+        font-size: clamp(1.7rem, 3vw, 2.4rem);
+        margin-bottom: 10px;
+      }
+
+      .section-header p {
+        color: var(--muted);
+        max-width: 820px;
+        margin: 0;
+      }
+
+      .card {
+        padding: 22px;
+      }
+
+      .card h3 {
+        font-size: 1.1rem;
+        margin-bottom: 12px;
+      }
+
+      .card p,
+      .card li,
+      .section li,
+      .section p {
+        color: var(--muted);
+      }
+
+      .callout {
+        padding: 18px 20px;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.02), transparent),
+          var(--bg-soft);
+      }
+
+      .callout strong {
+        color: var(--text);
+      }
+
+      .callout.info {
+        border-color: rgba(85, 214, 255, 0.34);
+        background: linear-gradient(135deg, rgba(85, 214, 255, 0.08), transparent),
+          var(--bg-soft);
+      }
+
+      .callout.warn {
+        border-color: rgba(255, 154, 82, 0.34);
+        background: linear-gradient(135deg, rgba(255, 154, 82, 0.08), transparent),
+          var(--bg-soft);
+      }
+
+      .callout.ok {
+        border-color: rgba(95, 224, 166, 0.34);
+        background: linear-gradient(135deg, rgba(95, 224, 166, 0.08), transparent),
+          var(--bg-soft);
+      }
+
+      ul,
+      ol {
+        margin: 0;
+        padding-left: 20px;
+      }
+
+      .stacked {
+        display: grid;
+        gap: 16px;
+      }
+
+      .diagram,
+      .code-block pre {
+        margin: 0;
+        overflow-x: auto;
+        padding: 20px;
+        border-radius: 16px;
+        background: #06111c;
+        border: 1px solid rgba(140, 174, 199, 0.12);
+        color: #d7ebfb;
+        font-size: 0.92rem;
+        line-height: 1.55;
+      }
+
+      .table-wrap {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        min-width: 680px;
+      }
+
+      th,
+      td {
+        border-bottom: 1px solid rgba(140, 174, 199, 0.14);
+        padding: 14px 12px;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--text);
+        font-size: 0.9rem;
+        background: rgba(255, 255, 255, 0.02);
+      }
+
+      td {
+        color: var(--muted);
+      }
+
+      .timeline {
+        padding: 20px;
+      }
+
+      .timeline ol {
+        display: grid;
+        gap: 14px;
+        padding-left: 20px;
+      }
+
+      .mini-title {
+        font-size: 0.94rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--cyan);
+        margin-bottom: 12px;
+      }
+
+      .footer-note {
+        margin-top: 24px;
+        padding-top: 16px;
+        border-top: 1px solid rgba(140, 174, 199, 0.12);
+        color: var(--muted);
+        font-size: 0.92rem;
+      }
+
+      .print-hint {
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 0.94rem;
+      }
+
+      @media (max-width: 960px) {
+        .summary-grid,
+        .meta-grid,
+        .three-grid,
+        .two-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .topbar-inner {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+
+      @media (max-width: 680px) {
+        .page,
+        .topbar-inner {
+          width: min(100% - 20px, 1200px);
+        }
+
+        .hero,
+        .section {
+          padding: 22px;
+        }
+
+        .summary-grid,
+        .meta-grid,
+        .three-grid,
+        .two-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .topnav {
+          justify-content: flex-start;
+        }
+      }
+
+      @media print {
+        body {
+          background: white;
+          color: black;
+        }
+
+        .no-print {
+          display: none;
+        }
+
+        .page {
+          width: 100%;
+          padding: 0;
+        }
+
+        .hero,
+        .section,
+        .stat,
+        .card,
+        .callout,
+        .timeline,
+        .code-block {
+          background: white !important;
+          color: black !important;
+          box-shadow: none !important;
+          border-color: #d6d6d6 !important;
+          break-inside: avoid;
+          page-break-inside: avoid;
+        }
+
+        .section-header p,
+        .card p,
+        .card li,
+        .section li,
+        .section p,
+        .stat-label,
+        .footer-note,
+        td {
+          color: #222 !important;
+        }
+
+        .diagram,
+        .code-block pre {
+          background: #f5f5f5 !important;
+          color: #111 !important;
+          border-color: #d6d6d6 !important;
+        }
+
+        a {
+          color: black !important;
+          text-decoration: none;
+        }
+
+        .badge {
+          border-color: #c8c8c8 !important;
+          color: black !important;
+          background: #fafafa !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="topbar no-print">
+      <div class="topbar-inner">
+        <div class="brand">
+          <span class="brand-mark"></span>
+          <span>ContextVault Knowledge System</span>
+        </div>
+        <nav class="topnav">
+          <a href="#resumen">Resumen</a>
+          <a href="#flujo">Pipeline</a>
+          <a href="#retrieval">Retrieval</a>
+          <a href="#reranking">Reranking</a>
+          <a href="#arquitectura">Arquitectura</a>
+          <a href="#comandos">Comandos</a>
+        </nav>
+      </div>
+    </div>
+
+    <main class="page">
+      <!-- Portada -->
+      <section class="hero">
+        <div class="eyebrow">Documentacion tecnica en espanol</div>
+        <h1>Pipeline RAG de ContextVault</h1>
+        <p>
+          Vista integral del pipeline actual de Retrieval-Augmented Generation del backend
+          ContextVault: desde upload e indexacion de documentos hasta retrieval hibrido,
+          respuesta con Gemini, sources y metadata de diagnostico.
+        </p>
+
+        <div class="badge-row">
+          <span class="badge cyan">FastAPI</span>
+          <span class="badge cyan">PostgreSQL</span>
+          <span class="badge cyan">pgvector</span>
+          <span class="badge orange">Gemini</span>
+          <span class="badge green">SQLAlchemy</span>
+          <span class="badge green">Alembic</span>
+        </div>
+
+        <div class="summary-grid">
+          <article class="stat">
+            <div class="stat-label">Ingesta</div>
+            <div class="stat-value">Upload + metadata + storage local</div>
+          </article>
+          <article class="stat">
+            <div class="stat-label">Indexacion</div>
+            <div class="stat-value">Extraccion, chunking y embeddings</div>
+          </article>
+          <article class="stat">
+            <div class="stat-label">Retrieval</div>
+            <div class="stat-value">Vector, keyword y hybrid con weighted RRF</div>
+          </article>
+          <article class="stat">
+            <div class="stat-label">Respuesta</div>
+            <div class="stat-value">Gemini LLM + sources + metadata</div>
+          </article>
+        </div>
+
+        <p class="print-hint no-print">
+          Esta pagina esta preparada para exportarse a PDF desde el navegador con una
+          hoja de impresion dedicada.
+        </p>
+      </section>
+
+      <!-- Resumen -->
+      <section class="section" id="resumen">
+        <header class="section-header">
+          <div class="section-kicker">01. Resumen</div>
+          <h2>Que es ContextVault y que problema resuelve un RAG</h2>
+          <p>
+            ContextVault es un backend FastAPI para una aplicacion RAG. Permite autenticar
+            usuarios, gestionar workspaces, subir documentos, indexarlos y consultarlos con
+            retrieval + generacion controlada sobre contenido privado.
+          </p>
+        </header>
+
+        <div class="two-grid">
+          <article class="card">
+            <h3>Problema</h3>
+            <p>
+              Un LLM general no conoce automaticamente los documentos privados de una
+              aplicacion. Si responde solo con su conocimiento previo, puede omitir,
+              inventar o descontextualizar informacion clave del usuario.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Solucion RAG</h3>
+            <p>
+              El backend primero recupera fragmentos relevantes del corpus del workspace y
+              luego entrega ese contexto al modelo para generar una respuesta fundamentada.
+              El resultado no es solo una respuesta: tambien incluye evidencia y metadata.
+            </p>
+          </article>
+        </div>
+
+        <div class="callout info" style="margin-top: 18px;">
+          <strong>Idea central:</strong> ContextVault separa claramente dos momentos del
+          pipeline: preparar documentos para busqueda y usar esos documentos como contexto
+          para responder preguntas.
+        </div>
+      </section>
+
+      <!-- Flujo general -->
+      <section class="section" id="flujo">
+        <header class="section-header">
+          <div class="section-kicker">02. Flujo general</div>
+          <h2>Del documento crudo a la respuesta con evidencia</h2>
+          <p>
+            Este diagrama resume el pipeline actual de extremo a extremo. Refleja el flujo
+            real implementado en el backend, sin asumir capacidades futuras.
+          </p>
+        </header>
+
+        <pre class="diagram">Usuario sube documento
+        |
+        v
+Storage local + metadata en base de datos
+        |
+        v
+Indexacion del documento
+        |
+        +--> Extraccion de texto
+        |
+        +--> Chunking
+        |
+        +--> Embeddings con Gemini
+        |
+        v
+Persistencia en PostgreSQL + pgvector
+        |
+        v
+Retrieval (vector | keyword | hybrid)
+        |
+        v
+Reranking opcional por arquitectura
+        |
+        v
+LLM Gemini
+        |
+        v
+Answer + sources + metadata</pre>
+
+        <div class="callout ok" style="margin-top: 18px;">
+          <strong>Separacion importante:</strong> upload e indexacion no son el mismo paso.
+          El documento puede existir en storage antes de convertirse en chunks buscables.
+        </div>
+      </section>
+
+      <!-- Upload -->
+      <section class="section" id="upload">
+        <header class="section-header">
+          <div class="section-kicker">03. Upload de documentos</div>
+          <h2>Archivo real en storage, metadata y estado en base de datos</h2>
+        </header>
+
+        <div class="three-grid">
+          <article class="card">
+            <h3>Storage local</h3>
+            <p>
+              El contenido real del archivo se guarda en storage local bajo
+              <code>LOCAL_STORAGE_PATH</code>. Este paso no genera embeddings ni chunks.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Metadata</h3>
+            <p>
+              La base de datos conserva workspace, nombre original, ruta de storage,
+              content type, timestamps y estado del documento.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Separacion funcional</h3>
+            <p>
+              Upload rapido primero, indexacion despues. Esto evita perder el archivo si la
+              indexacion falla y deja margen para futuras ejecuciones asincronas.
+            </p>
+          </article>
+        </div>
+
+        <div class="table-wrap" style="margin-top: 18px;">
+          <table>
+            <thead>
+              <tr>
+                <th>Estado</th>
+                <th>Significado</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>uploaded</code></td>
+                <td>El archivo existe, pero todavia no fue indexado.</td>
+              </tr>
+              <tr>
+                <td><code>indexing</code></td>
+                <td>El backend esta extrayendo texto, creando chunks o generando embeddings.</td>
+              </tr>
+              <tr>
+                <td><code>indexed</code></td>
+                <td>La indexacion termino correctamente y hay chunks persistidos.</td>
+              </tr>
+              <tr>
+                <td><code>index_failed</code></td>
+                <td>Hubo un error durante la indexacion.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Indexacion -->
+      <section class="section" id="indexacion">
+        <header class="section-header">
+          <div class="section-kicker">04. Indexacion</div>
+          <h2><code>IndexDocumentService</code> convierte archivos en chunks buscables</h2>
+        </header>
+
+        <div class="timeline">
+          <div class="mini-title">Pipeline interno de indexacion</div>
+          <ol>
+            <li>Validar ownership y workspace del documento.</li>
+            <li>Marcar estado como <code>indexing</code>.</li>
+            <li>Leer el archivo desde storage local.</li>
+            <li>Extraer texto segun el tipo de archivo.</li>
+            <li>Dividir el texto en chunks.</li>
+            <li>Generar embeddings para cada chunk.</li>
+            <li>Reemplazar chunks previos del documento, si existian.</li>
+            <li>Persistir nuevos registros en <code>document_chunks</code>.</li>
+            <li>Marcar el documento como <code>indexed</code>.</li>
+          </ol>
+        </div>
+
+        <div class="two-grid" style="margin-top: 18px;">
+          <article class="card">
+            <h3>Extraccion de texto</h3>
+            <p>
+              El pipeline actual soporta archivos <code>.txt</code>, <code>.md</code> y
+              <code>.pdf</code>. Primero se transforma el binario en texto utilizable.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Chunking</h3>
+            <p>
+              El splitter actual usa <code>RecursiveCharacterTextSplitter</code>, ajustado
+              mediante <code>RAG_CHUNK_SIZE</code> y <code>RAG_CHUNK_OVERLAP</code>.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <!-- Embeddings y pgvector -->
+      <section class="section" id="embeddings">
+        <header class="section-header">
+          <div class="section-kicker">05. Embeddings y pgvector</div>
+          <h2>Representacion semantica del texto para busqueda</h2>
+        </header>
+
+        <div class="two-grid">
+          <article class="card">
+            <h3>Que es un embedding</h3>
+            <p>
+              Un embedding es una representacion numerica del significado aproximado de un
+              texto. Permite comparar cercania semantica incluso cuando dos frases no usan
+              exactamente las mismas palabras.
+            </p>
+            <div class="code-block" style="margin-top: 14px;">
+              <pre>Pregunta: "como configuro la clave secreta del JWT?"
+Chunk:    "JWT_SECRET_KEY configures signing secrets"</pre>
+            </div>
+          </article>
+          <article class="card">
+            <h3>Por que pgvector importa</h3>
+            <p>
+              ContextVault guarda embeddings en PostgreSQL y usa <code>pgvector</code> para
+              ordenarlos por cercania vectorial. Eso habilita busqueda semantica dentro del
+              workspace autenticado del usuario.
+            </p>
+            <ul>
+              <li><code>workspace_id</code></li>
+              <li><code>document_id</code></li>
+              <li><code>content</code></li>
+              <li><code>chunk_index</code></li>
+              <li><code>embedding</code></li>
+              <li><code>metadata</code></li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <!-- Retrieval -->
+      <section class="section" id="retrieval">
+        <header class="section-header">
+          <div class="section-kicker">06. Retrieval</div>
+          <h2>Tres modos de recuperacion: vector, keyword e hybrid</h2>
+          <p>
+            La orquestacion de retrieval pertenece a <code>RetrievalService</code>. El mismo
+            comportamiento se comparte entre <code>/rag/search</code> y
+            <code>/rag/query</code>.
+          </p>
+        </header>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Modo</th>
+                <th>Como funciona</th>
+                <th>Fortaleza principal</th>
+                <th>Debilidad principal</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>vector</code></td>
+                <td>Genera embedding de la pregunta y busca cercania semantica con pgvector.</td>
+                <td>Encuentra intencion y sinonimos.</td>
+                <td>Puede no priorizar terminos tecnicos exactos.</td>
+              </tr>
+              <tr>
+                <td><code>keyword</code></td>
+                <td>Usa full-text search sobre <code>document_chunks.content</code>.</td>
+                <td>Encuentra identificadores y literales exactos.</td>
+                <td>No entiende reformulaciones como vector search.</td>
+              </tr>
+              <tr>
+                <td><code>hybrid</code></td>
+                <td>Combina candidatos vectoriales y keyword con weighted RRF.</td>
+                <td>Balancea significado e identificadores tecnicos.</td>
+                <td>La interpretacion del score final es mas compleja.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="three-grid" style="margin-top: 18px;">
+          <article class="card">
+            <h3>Busqueda vectorial</h3>
+            <p>
+              Ideal para preguntas naturales o cuando el usuario consulta con palabras
+              distintas a las del documento, pero con la misma intencion semantica.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Busqueda keyword / full-text</h3>
+            <p>
+              Ideal para terminos exactos como <code>pgvector</code>,
+              <code>JWT_SECRET_KEY</code>, <code>RAG_MIN_RELEVANCE_SCORE</code>,
+              <code>workspace_id</code> o <code>document_chunks</code>.
+            </p>
+          </article>
+          <article class="card">
+            <h3>RAG hibrido</h3>
+            <p>
+              Reune ambos mundos: semantica para preguntas abiertas y precision lexical
+              para identificadores, nombres de tablas, settings y clases tecnicas.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <!-- Weighted RRF -->
+      <section class="section" id="rrf">
+        <header class="section-header">
+          <div class="section-kicker">07. Weighted Reciprocal Rank Fusion</div>
+          <h2>La fusion compara rankings, no scores crudos incompatibles</h2>
+          <p>
+            En hybrid retrieval, ContextVault no suma directamente el score de pgvector con
+            el de full-text search. En su lugar, fusiona posiciones de ranking mediante
+            weighted Reciprocal Rank Fusion, o weighted RRF.
+          </p>
+        </header>
+
+        <div class="two-grid">
+          <article class="card">
+            <h3>Formula conceptual</h3>
+            <div class="code-block">
+              <pre>score = vector_weight  * 1 / (RRF_K + vector_rank)
+      + keyword_weight * 1 / (RRF_K + keyword_rank)</pre>
+            </div>
+            <p style="margin-top: 12px;">
+              Si un chunk aparece alto en ambas listas, sube en el ranking final. Si aparece
+              solo en una, igual puede competir con informacion parcial.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Variables relevantes</h3>
+            <ul>
+              <li><code>RAG_VECTOR_WEIGHT</code></li>
+              <li><code>RAG_KEYWORD_WEIGHT</code></li>
+              <li><code>RAG_VECTOR_CANDIDATES</code></li>
+              <li><code>RAG_KEYWORD_CANDIDATES</code></li>
+              <li><code>RAG_RETRIEVAL_MODE</code></li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="callout warn" style="margin-top: 18px;">
+          <strong>Aclaracion importante:</strong> <code>RRF_K = 60</code> es la constante
+          interna actual del servicio de retrieval. Hoy no esta expuesta como variable de
+          entorno y no existe <code>RAG_RRF_K</code> en esta fase.
+        </div>
+      </section>
+
+      <!-- Reranking -->
+      <section class="section" id="reranking">
+        <header class="section-header">
+          <div class="section-kicker">08. Reranking</div>
+          <h2>Capa preparada en arquitectura, pero sin adapter real todavia</h2>
+        </header>
+
+        <pre class="diagram">pregunta
+   -> retrieval obtiene candidatos iniciales
+   -> reranker puede reordenar candidatos
+   -> se seleccionan los mejores chunks
+   -> se construye contexto
+   -> LLM genera respuesta</pre>
+
+        <div class="two-grid" style="margin-top: 18px;">
+          <article class="card">
+            <h3>Donde entra</h3>
+            <p>
+              El reranking ocurre despues del retrieval y antes de construir el contexto que
+              se envia al LLM. Su rol es reordenar candidatos, no reemplazar el retrieval.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Estado actual del proyecto</h3>
+            <p>
+              El backend ya define <code>RerankerPort</code> y puede componer un provider por
+              dependencias. Actualmente el provider por defecto es
+              <code>NoOpReranker</code>, que conserva el orden existente.
+            </p>
+          </article>
+        </div>
+
+        <div class="callout info" style="margin-top: 18px;">
+          <strong>Importante:</strong> la arquitectura ya esta lista para un adapter real de
+          reranking en el futuro, pero el pipeline actual no usa todavia un modelo real de
+          reranking semantico. Esa extension sigue siendo una fase posterior.
+        </div>
+      </section>
+
+      <!-- Endpoints -->
+      <section class="section" id="endpoints">
+        <header class="section-header">
+          <div class="section-kicker">09. /rag/search vs /rag/query</div>
+          <h2>Debug de retrieval vs pregunta-respuesta con LLM</h2>
+        </header>
+
+        <div class="two-grid">
+          <article class="card">
+            <h3><code>/rag/search</code></h3>
+            <p>
+              Endpoint de debug y retrieval. Devuelve chunks recuperados, score breakdowns,
+              modo de retrieval y metadata para inspeccionar el comportamiento del sistema.
+              No genera respuesta con LLM.
+            </p>
+          </article>
+          <article class="card">
+            <h3><code>/rag/query</code></h3>
+            <p>
+              Endpoint de pregunta-respuesta. Usa el mismo retrieval, selecciona contexto,
+              construye el prompt con <code>RagPromptBuilder</code>, llama a Gemini y devuelve
+              <code>answer</code>, <code>sources</code> y <code>metadata</code>.
+            </p>
+          </article>
+        </div>
+
+        <div class="timeline" style="margin-top: 18px;">
+          <div class="mini-title">Flujo de /rag/query</div>
+          <ol>
+            <li>Validar pregunta y workspace.</li>
+            <li>Recuperar chunks con <code>RetrievalService</code>.</li>
+            <li>Si el modo es <code>vector</code>, aplicar <code>RAG_MIN_RELEVANCE_SCORE</code>.</li>
+            <li>Si el modo es <code>keyword</code> o <code>hybrid</code>, no usar ese threshold vectorial.</li>
+            <li>Si no hay contexto suficiente, devolver respuesta controlada sin llamar al LLM.</li>
+            <li>Construir prompt con el contexto recuperado.</li>
+            <li>Llamar a Gemini mediante <code>LLMProviderPort</code>.</li>
+            <li>Devolver respuesta, sources y metadata.</li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- Sources y metadata -->
+      <section class="section" id="sources">
+        <header class="section-header">
+          <div class="section-kicker">10. Sources y metadata</div>
+          <h2>Evidencia, trazabilidad y diagnostico del retrieval</h2>
+          <p>
+            En un sistema RAG no alcanza con responder bien: tambien importa explicar de
+            donde salio la evidencia y con que pipeline fue seleccionada.
+          </p>
+        </header>
+
+        <div class="meta-grid">
+          <article class="card"><h3><code>score</code></h3><p>Score final de ordenamiento.</p></article>
+          <article class="card"><h3><code>vector_score</code></h3><p>Score original de busqueda vectorial.</p></article>
+          <article class="card"><h3><code>keyword_score</code></h3><p>Score original de busqueda keyword.</p></article>
+          <article class="card"><h3><code>rerank_score</code></h3><p>Score opcional asignado por el reranker.</p></article>
+          <article class="card"><h3><code>original_rank</code></h3><p>Posicion antes del reranking.</p></article>
+          <article class="card"><h3><code>reranked_rank</code></h3><p>Posicion despues del reranking.</p></article>
+          <article class="card"><h3><code>retrieval_source</code></h3><p>Indica <code>vector</code>, <code>keyword</code> o <code>hybrid</code>.</p></article>
+          <article class="card"><h3><code>fusion_algorithm</code></h3><p>Hoy, <code>weighted_rrf</code> cuando aplica.</p></article>
+          <article class="card"><h3><code>context_chunks_used</code></h3><p>Cantidad de chunks usados en el prompt final.</p></article>
+          <article class="card"><h3><code>llm_model</code></h3><p>Modelo LLM usado para generar la respuesta.</p></article>
+          <article class="card"><h3><code>reranking_enabled</code></h3><p>Si el request o config pidio reranking.</p></article>
+          <article class="card"><h3><code>reranking_provider</code></h3><p>Provider configurado; hoy, <code>noop</code>.</p></article>
+          <article class="card"><h3><code>reranking_applied</code></h3><p>Indica si efectivamente se aplico el paso.</p></article>
+        </div>
+
+        <div class="callout ok" style="margin-top: 18px;">
+          <strong>Diferencia util:</strong> en <code>/rag/search</code> se devuelve el contenido
+          completo del chunk para debug. En <code>/rag/query</code> las sources muestran un
+          <code>content_preview</code> para evidenciar sin exponer todo el contexto usado.
+        </div>
+      </section>
+
+      <!-- Arquitectura -->
+      <section class="section" id="arquitectura">
+        <header class="section-header">
+          <div class="section-kicker">11. Arquitectura del modulo RAG</div>
+          <h2>Servicios, puertos, adapters y repositorios</h2>
+        </header>
+
+        <pre class="diagram">src/rag_backend/modules/rag/
+  domain/         entidades y conceptos centrales
+  application/    servicios, DTOs y ports
+  infrastructure/ adapters concretos y repositorios
+  interfaces/     routers FastAPI y schemas HTTP</pre>
+
+        <div class="three-grid" style="margin-top: 18px;">
+          <article class="card">
+            <h3>Servicios principales</h3>
+            <ul>
+              <li><code>IndexDocumentService</code></li>
+              <li><code>RetrievalService</code></li>
+              <li><code>SearchSimilarChunksService</code></li>
+              <li><code>QueryRagService</code></li>
+              <li><code>RagPromptBuilder</code></li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Ports</h3>
+            <ul>
+              <li><code>EmbeddingProviderPort</code></li>
+              <li><code>LLMProviderPort</code></li>
+              <li><code>RerankerPort</code></li>
+              <li><code>ChunkRepositoryPort</code></li>
+              <li><code>TextExtractorPort</code></li>
+              <li><code>TextSplitterPort</code></li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Implementaciones concretas</h3>
+            <ul>
+              <li>Gemini embeddings</li>
+              <li>Gemini LLM</li>
+              <li>LangChain splitter</li>
+              <li>SQLAlchemy repository</li>
+              <li><code>NoOpReranker</code> por defecto</li>
+            </ul>
+          </article>
+        </div>
+
+        <div class="callout warn" style="margin-top: 18px;">
+          <strong>Regla de arquitectura:</strong> la logica RAG no vive en los routers.
+          Los routers componen dependencias y traducen HTTP; la orquestacion de retrieval,
+          scoring, fusion y answering queda en la capa de aplicacion.
+        </div>
+      </section>
+
+      <!-- Limites actuales -->
+      <section class="section" id="limites">
+        <header class="section-header">
+          <div class="section-kicker">12. Que no hace todavia</div>
+          <h2>Limites actuales del pipeline</h2>
+        </header>
+
+        <div class="three-grid">
+          <article class="card">
+            <h3>No hay adapter real de reranking</h3>
+            <p>
+              La extension ya tiene port y contrato, pero el provider efectivo por defecto
+              sigue siendo <code>NoOpReranker</code>.
+            </p>
+          </article>
+          <article class="card">
+            <h3>No hay chat conversacional</h3>
+            <p>
+              El sistema actual responde preguntas puntuales. No mantiene historial de
+              conversacion como parte del pipeline RAG vigente.
+            </p>
+          </article>
+          <article class="card">
+            <h3>No hay parent-child chunks</h3>
+            <p>
+              El chunking actual es lineal. Todavia no existe una estrategia padre-hijo para
+              recuperar contexto jerarquico.
+            </p>
+          </article>
+          <article class="card">
+            <h3>No hay streaming</h3>
+            <p>
+              La respuesta del LLM se devuelve como payload completo, no como stream de
+              tokens o fragmentos incrementales.
+            </p>
+          </article>
+          <article class="card">
+            <h3>No hay observabilidad avanzada</h3>
+            <p>
+              Existen sources y metadata utiles, pero no una capa completa de tracing,
+              dashboards operativos o analitica avanzada de retrieval.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <!-- Proximas fases -->
+      <section class="section" id="fases">
+        <header class="section-header">
+          <div class="section-kicker">13. Proximas fases</div>
+          <h2>Extensiones naturales del roadmap RAG</h2>
+        </header>
+
+        <div class="two-grid">
+          <article class="card">
+            <h3>Fase 6: chat conversacional</h3>
+            <p>
+              Incorporar historial y continuidad entre preguntas para construir contexto a lo
+              largo de una sesion conversacional.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Fase 7: parent-child chunks</h3>
+            <p>
+              Recuperar fragmentos pequenos manteniendo la posibilidad de expandirlos a una
+              unidad de contexto mayor y mas coherente.
+            </p>
+          </article>
+          <article class="card">
+            <h3>Fase futura: adapter real de reranking</h3>
+            <p>
+              Reemplazar el comportamiento <code>noop</code> por un adapter real detras de
+              <code>RerankerPort</code>, sin mover la logica fuera de la arquitectura actual.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <!-- Comandos -->
+      <section class="section" id="comandos">
+        <header class="section-header">
+          <div class="section-kicker">14. Comandos utiles</div>
+          <h2>Operaciones comunes para desarrollo local</h2>
+        </header>
+
+        <div class="two-grid">
+          <article class="code-block">
+            <pre>ruff check .
+pytest
+alembic upgrade head
+docker compose up -d postgres redis</pre>
+          </article>
+          <article class="card">
+            <h3>Uso recomendado</h3>
+            <p>
+              Estos comandos cubren validacion estandar, pruebas, migraciones y arranque de
+              infraestructura base para trabajar localmente con el backend.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <!-- Curl -->
+      <section class="section" id="curl">
+        <header class="section-header">
+          <div class="section-kicker">15. Ejemplos curl</div>
+          <h2>Pruebas manuales de retrieval y query answering</h2>
+        </header>
+
+        <div class="stacked">
+          <article class="code-block">
+            <pre>curl -X POST "http://localhost:8000/api/v1/workspaces/$WORKSPACE_ID/rag/search" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "JWT_SECRET_KEY",
+    "top_k": 5,
+    "retrieval_mode": "hybrid",
+    "reranking_enabled": true
+  }'</pre>
+          </article>
+
+          <article class="code-block">
+            <pre>curl -X POST "http://localhost:8000/api/v1/workspaces/$WORKSPACE_ID/rag/query" \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question": "Para que sirve JWT_SECRET_KEY?",
+    "top_k": 5,
+    "retrieval_mode": "hybrid",
+    "reranking_enabled": true
+  }'</pre>
+          </article>
+        </div>
+
+        <div class="footer-note">
+          Variables del ejemplo: <code>ACCESS_TOKEN</code> es el JWT obtenido desde
+          <code>/api/v1/auth/login</code> y <code>WORKSPACE_ID</code> es el identificador del
+          workspace que contiene los documentos indexados.
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
