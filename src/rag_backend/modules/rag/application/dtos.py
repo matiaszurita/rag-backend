@@ -1,7 +1,12 @@
 from dataclasses import dataclass, field
+from datetime import datetime
 from uuid import UUID
 
-from rag_backend.modules.rag.domain.entities import RetrievalMode, RetrievalSource
+from rag_backend.modules.rag.domain.entities import (
+    ConversationMessageRole,
+    RetrievalMode,
+    RetrievalSource,
+)
 
 
 @dataclass(slots=True)
@@ -112,3 +117,51 @@ class QueryRagResult:
     answer: str
     sources: list[RagSourceDTO]
     metadata: QueryRagMetadataDTO
+
+
+@dataclass(slots=True)
+class CreateConversationCommand:
+    owner_id: UUID
+    workspace_id: UUID
+    title: str | None = None
+
+
+@dataclass(slots=True)
+class ConversationMessageDTO:
+    id: UUID
+    conversation_id: UUID
+    message_index: int
+    role: ConversationMessageRole
+    content: str
+    sources: list[dict[str, object]] | None
+    metadata: dict[str, object] | None
+    created_at: datetime | None
+    updated_at: datetime | None
+
+
+@dataclass(slots=True)
+class ConversationDTO:
+    id: UUID
+    workspace_id: UUID
+    title: str | None
+    created_at: datetime
+    updated_at: datetime
+    messages: list[ConversationMessageDTO] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class SendConversationMessageCommand:
+    owner_id: UUID
+    workspace_id: UUID
+    conversation_id: UUID
+    message: str
+    top_k: int | None
+    retrieval_mode: RetrievalMode | None = None
+    reranking_enabled: bool | None = None
+
+
+@dataclass(slots=True)
+class SendConversationMessageResult:
+    conversation_id: UUID
+    user_message: ConversationMessageDTO
+    assistant_message: ConversationMessageDTO

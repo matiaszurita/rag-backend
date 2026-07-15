@@ -16,6 +16,11 @@ class RetrievalSource(StrEnum):
     HYBRID = "hybrid"
 
 
+class ConversationMessageRole(StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+
+
 @dataclass(slots=True)
 class DocumentChunk:
     id: UUID
@@ -42,3 +47,25 @@ class SimilarChunk:
     original_rank: int | None = None
     reranked_rank: int | None = None
     retrieval_source: RetrievalSource = RetrievalSource.VECTOR
+
+
+@dataclass(slots=True)
+class Conversation:
+    id: UUID
+    workspace_id: UUID
+    title: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+@dataclass(slots=True)
+class ConversationMessage:
+    id: UUID
+    conversation_id: UUID
+    message_index: int
+    role: ConversationMessageRole
+    content: str
+    sources: list[dict[str, object]] | None = None
+    metadata: dict[str, object] | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None

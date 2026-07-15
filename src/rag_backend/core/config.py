@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     rag_reranking_enabled: bool = Field(default=False, alias="RAG_RERANKING_ENABLED")
     rag_reranking_provider: str = Field(default="noop", alias="RAG_RERANKING_PROVIDER")
     rag_reranking_candidates: int = Field(default=20, alias="RAG_RERANKING_CANDIDATES")
+    rag_chat_history_messages: int = Field(default=6, alias="RAG_CHAT_HISTORY_MESSAGES")
+    rag_chat_title_max_length: int = Field(default=80, alias="RAG_CHAT_TITLE_MAX_LENGTH")
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
     @field_validator("rag_retrieval_mode")
@@ -95,6 +97,10 @@ class Settings(BaseSettings):
             raise ValueError("RAG_KEYWORD_CANDIDATES must be at least 1")
         if self.rag_reranking_candidates < 1:
             raise ValueError("RAG_RERANKING_CANDIDATES must be at least 1")
+        if self.rag_chat_history_messages < 1:
+            raise ValueError("RAG_CHAT_HISTORY_MESSAGES must be at least 1")
+        if self.rag_chat_title_max_length < 1:
+            raise ValueError("RAG_CHAT_TITLE_MAX_LENGTH must be at least 1")
         return self
 
     @property

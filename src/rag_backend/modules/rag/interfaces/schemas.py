@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
@@ -92,3 +93,44 @@ class QueryResponse(BaseModel):
     answer: str
     sources: list[RagSource]
     metadata: QueryMetadata
+
+
+class CreateConversationRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+
+
+class SendConversationMessageRequest(BaseModel):
+    message: str
+    top_k: int | None = Field(default=None, ge=1)
+    retrieval_mode: Literal["vector", "keyword", "hybrid"] | None = None
+    reranking_enabled: bool | None = None
+
+
+class ConversationMessageResponse(BaseModel):
+    id: UUID
+    conversation_id: UUID
+    message_index: int
+    role: Literal["user", "assistant"]
+    content: str
+    sources: list[RagSource] | None = None
+    metadata: dict[str, object] | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ConversationResponse(BaseModel):
+    id: UUID
+    workspace_id: UUID
+    title: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationDetailResponse(ConversationResponse):
+    messages: list[ConversationMessageResponse]
+
+
+class SendConversationMessageResponse(BaseModel):
+    conversation_id: UUID
+    user_message: ConversationMessageResponse
+    assistant_message: ConversationMessageResponse

@@ -2,7 +2,12 @@ from typing import Protocol
 from uuid import UUID
 
 from rag_backend.modules.documents.domain.entities import Document, DocumentStatus
-from rag_backend.modules.rag.domain.entities import DocumentChunk, SimilarChunk
+from rag_backend.modules.rag.domain.entities import (
+    Conversation,
+    ConversationMessage,
+    DocumentChunk,
+    SimilarChunk,
+)
 
 
 class TextExtractorPort(Protocol):
@@ -83,5 +88,53 @@ class DocumentAccessPort(Protocol):
         document_id: UUID,
         status: DocumentStatus,
     ) -> None: ...
+
+    async def commit(self) -> None: ...
+
+
+class ConversationRepositoryPort(Protocol):
+    async def workspace_exists_for_owner(self, *, owner_id: UUID, workspace_id: UUID) -> bool: ...
+
+    async def create_conversation(
+        self,
+        *,
+        workspace_id: UUID,
+        title: str | None,
+    ) -> Conversation: ...
+
+    async def list_conversations_for_owner(
+        self,
+        *,
+        owner_id: UUID,
+        workspace_id: UUID,
+    ) -> list[Conversation]: ...
+
+    async def get_conversation_for_owner(
+        self,
+        *,
+        owner_id: UUID,
+        workspace_id: UUID,
+        conversation_id: UUID,
+    ) -> Conversation | None: ...
+
+    async def list_messages(self, *, conversation_id: UUID) -> list[ConversationMessage]: ...
+
+    async def list_recent_messages(
+        self,
+        *,
+        conversation_id: UUID,
+        limit: int,
+    ) -> list[ConversationMessage]: ...
+
+    async def append_turn(
+        self,
+        *,
+        conversation_id: UUID,
+        user_content: str,
+        assistant_content: str,
+        assistant_sources: list[dict[str, object]],
+        assistant_metadata: dict[str, object],
+        title: str | None = None,
+    ) -> tuple[ConversationMessage, ConversationMessage]: ...
 
     async def commit(self) -> None: ...
