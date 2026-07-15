@@ -15,5 +15,6 @@ COPY alembic.ini ./
 COPY alembic ./alembic
 
 RUN pip install --upgrade pip && pip install -e .
+RUN mkdir -p /app/data/documents
 
-CMD ["uvicorn", "rag_backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD sh -c "uvicorn rag_backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"
